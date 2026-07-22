@@ -157,6 +157,21 @@ pub enum TransportEvent {
     Control(ControlRecord),
 }
 
+/// Monotonic, provider-independent notification observations.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TransportDiagnostics {
+    /// Primary notification hints observed in either direction.
+    pub primary_wakeups: u64,
+    /// Correctness-poll wake-ups requested in either direction.
+    pub polling_wakeups: u64,
+    /// Notification posts suppressed while shared state was already pending.
+    pub coalesced_wakeups: u64,
+    /// Correctness polls which found shared-state progress independent of a hint.
+    pub polling_recoveries: u64,
+    /// Sender or listener provider failures.
+    pub signal_failures: u64,
+}
+
 /// A mapped channel combined with primary notification hints and correctness polling.
 pub struct ChannelTransport<Sender, Listener> {
     channel: ChannelEndpoint,
@@ -164,6 +179,10 @@ pub struct ChannelTransport<Sender, Listener> {
     inbound_sender: Sender,
     outbound_wake: HybridSignal<Listener>,
     inbound_wake: HybridSignal<Listener>,
+    coalesced_wakeups: u64,
+    sender_failures: u64,
+    explicit_polls: u64,
+    explicit_poll_recoveries: u64,
 }
 
 impl<Sender, Listener> ChannelTransport<Sender, Listener>
@@ -190,6 +209,10 @@ where
             inbound_sender,
             outbound_wake: HybridSignal::new(outbound_listener, AdaptivePoller::new(poll_config)?),
             inbound_wake: HybridSignal::new(inbound_listener, AdaptivePoller::new(poll_config)?),
+            coalesced_wakeups: 0,
+            sender_failures: 0,
+            explicit_polls: 0,
+            explicit_poll_recoveries: 0,
         })
     }
 
@@ -247,11 +270,19 @@ where
     ///
     /// Propagates shared-state validation and signal-provider failures.
     pub fn poll(&mut self) -> Result<Option<TransportEvent>, ErrorReport> {
+        self.explicit_polls = self.explicit_polls.saturating_add(1);
         if let Some(event) = self.channel.receive()? {
-            self.inbound_sender.notify()?;
+            if let Err(error) = self.inbound_sender.notify() {
+                self.sender_failures = self.sender_failures.saturating_add(1);
+                return Err(error);
+            }
+            self.explicit_poll_recoveries = self.explicit_poll_recoveries.saturating_add(1);
             return Ok(Some(channel_event(event)));
         }
         let flow = self.channel.refresh_flow()?;
+        if flow.became_writable {
+            self.explicit_poll_recoveries = self.explicit_poll_recoveries.saturating_add(1);
+        }
         Ok(flow.became_writable.then_some(TransportEvent::Writable))
     }
 
@@ -291,9 +322,37 @@ where
         self.inbound_wake.cancel();
     }
 
-    fn notify_outbound(&self, sent: ChannelSend) -> Result<(), ErrorReport> {
+    /// Returns cumulative redacted notification counters.
+    pub fn diagnostics(&self) -> TransportDiagnostics {
+        let outbound = self.outbound_wake.diagnostics();
+        let inbound = self.inbound_wake.diagnostics();
+        TransportDiagnostics {
+            primary_wakeups: outbound.primary_wakes.saturating_add(inbound.primary_wakes),
+            polling_wakeups: self
+                .explicit_polls
+                .saturating_add(outbound.poll_wakes)
+                .saturating_add(inbound.poll_wakes),
+            coalesced_wakeups: self.coalesced_wakeups,
+            polling_recoveries: self
+                .explicit_poll_recoveries
+                .saturating_add(outbound.recovered_wakes)
+                .saturating_add(inbound.recovered_wakes),
+            signal_failures: self.sender_failures.saturating_add(
+                outbound
+                    .provider_failures
+                    .saturating_add(inbound.provider_failures),
+            ),
+        }
+    }
+
+    fn notify_outbound(&mut self, sent: ChannelSend) -> Result<(), ErrorReport> {
         if sent.notify {
-            self.outbound_sender.notify()?;
+            if let Err(error) = self.outbound_sender.notify() {
+                self.sender_failures = self.sender_failures.saturating_add(1);
+                return Err(error);
+            }
+        } else {
+            self.coalesced_wakeups = self.coalesced_wakeups.saturating_add(1);
         }
         Ok(())
     }
@@ -506,6 +565,16 @@ mod tests {
     fn fake_provider_passes_production_transport_contract_with_dropped_signals() {
         let (mut renderer, mut peer) = fake_transports(FakeSignalMode::Drop).unwrap();
         run_contract(&mut renderer, &mut peer);
+        assert!(renderer.diagnostics().polling_recoveries > 0);
+        assert!(peer.diagnostics().polling_recoveries > 0);
+    }
+
+    #[test]
+    fn diagnostics_count_suppressed_notification_posts() {
+        let (mut renderer, _) = fake_transports(FakeSignalMode::Deliver).unwrap();
+        renderer.send(b"first").unwrap();
+        renderer.send(b"second").unwrap();
+        assert_eq!(renderer.diagnostics().coalesced_wakeups, 1);
     }
 
     #[test]

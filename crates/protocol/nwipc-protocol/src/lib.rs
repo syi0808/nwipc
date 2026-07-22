@@ -346,10 +346,7 @@ impl AcceptorHandshake {
             self.config.remote_role,
         )?;
         if hello.proof != self.config.proof {
-            return Err(protocol_error(
-                ErrorCode::ProtocolViolation,
-                "protocol authentication proof",
-            ));
+            return Err(authentication_error());
         }
         let version = negotiate_version(self.config.versions, hello.versions)?;
         let capabilities = negotiate(self.config.supported, hello.requested, hello.required)?;
@@ -532,6 +529,14 @@ fn protocol_error(code: ErrorCode, operation: &'static str) -> ErrorReport {
         operation,
     )
 }
+fn authentication_error() -> ErrorReport {
+    ErrorReport::new(
+        ErrorCategory::Security,
+        ErrorCode::ProtocolViolation,
+        Recoverability::ReplaceEndpoint,
+        "protocol authentication proof",
+    )
+}
 fn get_u16(bytes: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes(
         bytes[offset..offset + 2]
@@ -656,6 +661,14 @@ mod tests {
             let input: Vec<u8> = (0_u8..=u8::MAX).cycle().take(length).collect();
             let _ = acceptor().accept(&input);
         }
+    }
+    #[test]
+    fn authentication_mismatch_has_security_category() {
+        let mut hello = initiator().hello().unwrap();
+        *hello.last_mut().unwrap() ^= 0xff;
+        let error = acceptor().accept(&hello).unwrap_err();
+        assert_eq!(error.category(), ErrorCategory::Security);
+        assert_eq!(error.code(), ErrorCode::ProtocolViolation);
     }
     #[test]
     fn version_negotiation_overlap_property() {

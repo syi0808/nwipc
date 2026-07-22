@@ -1,5 +1,6 @@
 //! Provider-erased public configuration, session, renderer, peer-bootstrap, and diagnostics API.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -7,9 +8,11 @@ use std::sync::{Arc, Mutex};
 
 use nwipc_bootstrap_schema::{BootstrapEnvelope, BootstrapSecret, EndpointRole, ProtocolRange};
 use nwipc_capabilities::TransportTopology;
+pub use nwipc_diagnostics::{
+    CleanupStatus, DiagnosticsSnapshot, FailureDiagnostics, FailureStage, SessionDiagnostics,
+};
 use nwipc_diagnostics::{
-    DiagnosticsSnapshot, MemoryBackend as DiagnosticMemoryBackend, SessionDiagnostics,
-    SignalBackend as DiagnosticSignalBackend,
+    MemoryBackend as DiagnosticMemoryBackend, SignalBackend as DiagnosticSignalBackend,
 };
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_transport::{
@@ -18,7 +21,9 @@ use nwipc_macos_transport::{
 };
 use nwipc_metrics::Metrics;
 use nwipc_peer_bootstrap::write_envelope;
-use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent};
+use nwipc_renderer_api::{
+    RendererTransport, SendDisposition, TransportDiagnostics, TransportEvent,
+};
 use nwipc_renderer_bootstrap::RendererBootstrap;
 use nwipc_runtime::{ProviderSelection, ResourcePreparer, Runtime, SessionHandle};
 use nwipc_session::{OwnedResource, PreparedResources};
@@ -27,6 +32,7 @@ use nwipc_state::SessionState;
 use nwipc_types::{Generation, SessionId};
 
 const SECRET_LENGTH: usize = 32;
+const RETAINED_GENERATIONS_PER_SESSION: usize = 16;
 
 /// Provider-neutral production configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,6 +99,24 @@ struct BootstrapPair {
 }
 
 type BootstrapCatalog = Arc<Mutex<HashMap<(SessionId, Generation), BootstrapPair>>>;
+type ObservationCatalog = Arc<Mutex<HashMap<(SessionId, Generation), GenerationObservation>>>;
+
+#[derive(Clone, Copy)]
+struct GenerationObservation {
+    state: SessionState,
+    cleanup: CleanupStatus,
+    last_failure: Option<FailureDiagnostics>,
+}
+
+impl GenerationObservation {
+    const fn prepared() -> Self {
+        Self {
+            state: SessionState::WaitingForRenderer,
+            cleanup: CleanupStatus::Pending,
+            last_failure: None,
+        }
+    }
+}
 
 struct MacosPreparer {
     configuration: Configuration,
@@ -166,11 +190,14 @@ impl OwnedResource for TransportResource {
 struct ObservedRendererTransport<Transport> {
     inner: Transport,
     metrics: Metrics,
+    observations: ObservationCatalog,
+    key: (SessionId, Generation),
+    provider_diagnostics: Cell<TransportDiagnostics>,
 }
 
 impl<Transport: RendererTransport> RendererTransport for ObservedRendererTransport<Transport> {
     fn send(&mut self, payload: &[u8]) -> Result<SendDisposition, ErrorReport> {
-        match self.inner.send(payload) {
+        let result = match self.inner.send(payload) {
             Ok(disposition) => {
                 self.metrics.record_sent(payload.len());
                 if disposition == SendDisposition::Backpressured {
@@ -182,19 +209,33 @@ impl<Transport: RendererTransport> RendererTransport for ObservedRendererTranspo
                 if error.code() == ErrorCode::Backpressured {
                     self.metrics.record_backpressure();
                 } else {
-                    self.metrics.record_failure();
+                    record_failure(&self.metrics, &error);
+                    observe_failure(
+                        &self.observations,
+                        self.key,
+                        FailureStage::Transport,
+                        &error,
+                    );
                 }
                 Err(error)
             }
-        }
+        };
+        self.sync_provider_diagnostics();
+        result
     }
 
     fn buffered_amount(&self) -> Result<u32, ErrorReport> {
-        self.inner.buffered_amount()
+        let result = self.inner.buffered_amount();
+        if let Err(error) = &result {
+            record_failure(&self.metrics, error);
+            observe_failure(&self.observations, self.key, FailureStage::Transport, error);
+        }
+        self.sync_provider_diagnostics();
+        result
     }
 
     fn poll(&mut self) -> Result<Option<TransportEvent>, ErrorReport> {
-        match self.inner.poll() {
+        let result = match self.inner.poll() {
             Ok(Some(TransportEvent::Message(payload))) => {
                 self.metrics.record_received(payload.len());
                 Ok(Some(TransportEvent::Message(payload)))
@@ -204,21 +245,69 @@ impl<Transport: RendererTransport> RendererTransport for ObservedRendererTranspo
                 Ok(Some(TransportEvent::Writable))
             }
             Ok(Some(TransportEvent::Error(error))) => {
-                self.metrics.record_failure();
+                record_failure(&self.metrics, &error);
+                observe_failure(
+                    &self.observations,
+                    self.key,
+                    FailureStage::Transport,
+                    &error,
+                );
                 Ok(Some(TransportEvent::Error(error)))
             }
             Ok(event) => Ok(event),
             Err(error) => {
-                self.metrics.record_failure();
+                record_failure(&self.metrics, &error);
+                observe_failure(
+                    &self.observations,
+                    self.key,
+                    FailureStage::Transport,
+                    &error,
+                );
                 Err(error)
             }
-        }
+        };
+        self.sync_provider_diagnostics();
+        result
     }
 
     fn close(&mut self) -> Result<(), ErrorReport> {
-        self.inner.close().inspect_err(|_| {
-            self.metrics.record_failure();
-        })
+        let result = self.inner.close().inspect_err(|error| {
+            record_failure(&self.metrics, error);
+            observe_failure(&self.observations, self.key, FailureStage::Transport, error);
+        });
+        self.sync_provider_diagnostics();
+        result
+    }
+
+    fn diagnostics(&self) -> TransportDiagnostics {
+        self.inner.diagnostics()
+    }
+}
+
+impl<Transport: RendererTransport> ObservedRendererTransport<Transport> {
+    fn sync_provider_diagnostics(&self) {
+        let current = self.inner.diagnostics();
+        let previous = self.provider_diagnostics.get();
+        self.metrics.record_wakeups(
+            current
+                .primary_wakeups
+                .saturating_sub(previous.primary_wakeups),
+            current
+                .polling_wakeups
+                .saturating_sub(previous.polling_wakeups),
+            current
+                .coalesced_wakeups
+                .saturating_sub(previous.coalesced_wakeups),
+            current
+                .polling_recoveries
+                .saturating_sub(previous.polling_recoveries),
+        );
+        self.metrics.record_signal_failures(
+            current
+                .signal_failures
+                .saturating_sub(previous.signal_failures),
+        );
+        self.provider_diagnostics.set(current);
     }
 }
 
@@ -228,6 +317,8 @@ pub struct Session {
     protocol: u16,
     peer_bootstrap: Option<BootstrapEnvelope>,
     renderer_bootstrap: Option<BootstrapEnvelope>,
+    metrics: Metrics,
+    observations: ObservationCatalog,
 }
 
 impl Session {
@@ -258,11 +349,21 @@ impl Session {
     ///
     /// Returns `Closed` after consumption or a typed bootstrap I/O error.
     pub fn write_peer_bootstrap(&mut self, writer: &mut impl Write) -> Result<(), ErrorReport> {
-        let envelope = self
+        let result = self
             .peer_bootstrap
             .take()
-            .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume peer bootstrap"))?;
-        write_envelope(writer, &envelope)
+            .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume peer bootstrap"))
+            .and_then(|envelope| write_envelope(writer, &envelope));
+        if let Err(error) = &result {
+            record_failure(&self.metrics, error);
+            observe_failure(
+                &self.observations,
+                (self.id(), self.generation()),
+                FailureStage::Bootstrap,
+                error,
+            );
+        }
+        result
     }
 
     /// Writes the one-shot canonical renderer bootstrap for a process-pool property-list value.
@@ -274,14 +375,26 @@ impl Session {
     ///
     /// Returns `Closed` after consumption or a typed bootstrap encoding error.
     pub fn write_renderer_bootstrap(&mut self, writer: &mut impl Write) -> Result<(), ErrorReport> {
-        let envelope = self
+        let result = self
             .renderer_bootstrap
             .take()
-            .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume renderer bootstrap"))?;
-        let encoded = nwipc_bootstrap_codec::encode(&envelope)?;
-        writer
-            .write_all(&encoded)
-            .map_err(|_| configuration_error(ErrorCode::Closed, "write renderer bootstrap"))
+            .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume renderer bootstrap"))
+            .and_then(|envelope| nwipc_bootstrap_codec::encode(&envelope))
+            .and_then(|encoded| {
+                writer
+                    .write_all(&encoded)
+                    .map_err(|_| configuration_error(ErrorCode::Closed, "write renderer bootstrap"))
+            });
+        if let Err(error) = &result {
+            record_failure(&self.metrics, error);
+            observe_failure(
+                &self.observations,
+                (self.id(), self.generation()),
+                FailureStage::Bootstrap,
+                error,
+            );
+        }
+        result
     }
 }
 
@@ -309,7 +422,7 @@ pub struct Nwipc {
     runtime: Runtime<MacosPreparer>,
     catalog: BootstrapCatalog,
     metrics: Metrics,
-    sessions: HashMap<SessionId, SessionHandle>,
+    observations: ObservationCatalog,
 }
 
 impl Nwipc {
@@ -340,7 +453,7 @@ impl Nwipc {
             runtime: Runtime::new(ProviderSelection::MACOS, preparer),
             catalog,
             metrics: Metrics::new(),
-            sessions: HashMap::new(),
+            observations: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -355,8 +468,8 @@ impl Nwipc {
     ///
     /// Propagates provider allocation, layout, randomness, and runtime failures.
     pub fn create_session(&mut self) -> Result<Session, ErrorReport> {
-        let handle = self.runtime.create_session().inspect_err(|_| {
-            self.metrics.record_failure();
+        let handle = self.runtime.create_session().inspect_err(|error| {
+            record_failure(&self.metrics, error);
         })?;
         let pair = self
             .catalog
@@ -365,12 +478,18 @@ impl Nwipc {
             .remove(&(handle.session_id, handle.generation))
             .ok_or_else(|| configuration_error(ErrorCode::Internal, "prepared bootstrap"))?;
         self.metrics.record_session_created();
-        self.sessions.insert(handle.session_id, handle);
+        insert_observation(
+            &self.observations,
+            (handle.session_id, handle.generation),
+            GenerationObservation::prepared(),
+        );
         Ok(Session {
             handle,
             protocol: self.configuration.protocol,
             peer_bootstrap: Some(pair.peer),
             renderer_bootstrap: Some(pair.renderer),
+            metrics: self.metrics.clone(),
+            observations: Arc::clone(&self.observations),
         })
     }
 
@@ -394,17 +513,44 @@ impl Nwipc {
             self.configuration.protocol,
             &mut MacosRendererTransportFactory::default(),
         )
-        .inspect_err(|_| self.metrics.record_failure())?;
+        .inspect_err(|error| {
+            record_failure(&self.metrics, error);
+            observe_failure(
+                &self.observations,
+                (session.id(), session.generation()),
+                FailureStage::Handshake,
+                error,
+            );
+        })?;
         for event in [
             LifecycleEvent::RendererAttached,
             LifecycleEvent::PeerAttached,
             LifecycleEvent::HandshakeCompleted,
         ] {
-            self.runtime.route(session.handle, event)?;
+            self.runtime
+                .route(session.handle, event)
+                .inspect_err(|error| {
+                    record_failure(&self.metrics, error);
+                    observe_failure(
+                        &self.observations,
+                        (session.id(), session.generation()),
+                        FailureStage::Lifecycle,
+                        error,
+                    );
+                })?;
         }
+        update_observation(
+            &self.observations,
+            (session.id(), session.generation()),
+            SessionState::Open,
+            CleanupStatus::Pending,
+        );
         Ok(Box::new(ObservedRendererTransport {
             inner: transport,
             metrics: self.metrics.clone(),
+            observations: Arc::clone(&self.observations),
+            key: (session.id(), session.generation()),
+            provider_diagnostics: Cell::new(TransportDiagnostics::default()),
         }))
     }
 
@@ -422,8 +568,49 @@ impl Nwipc {
             LifecycleEvent::PeerAttached,
             LifecycleEvent::HandshakeCompleted,
         ] {
-            self.runtime.route(session.handle, event)?;
+            self.runtime
+                .route(session.handle, event)
+                .inspect_err(|error| {
+                    record_failure(&self.metrics, error);
+                    observe_failure(
+                        &self.observations,
+                        (session.id(), session.generation()),
+                        FailureStage::Lifecycle,
+                        error,
+                    );
+                })?;
         }
+        update_observation(
+            &self.observations,
+            (session.id(), session.generation()),
+            SessionState::Open,
+            CleanupStatus::Pending,
+        );
+        Ok(())
+    }
+
+    /// Records a redacted endpoint failure observed by an external host adapter.
+    ///
+    /// This bridge accepts only an already-redacted [`ErrorReport`]. It does not accept payload,
+    /// provider source errors, bootstrap secrets, or native handles.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StaleGeneration` unless `session` is the active generation.
+    pub fn observe_external_failure(
+        &self,
+        session: &Session,
+        stage: FailureStage,
+        error: &ErrorReport,
+    ) -> Result<(), ErrorReport> {
+        self.runtime.state(session.handle)?;
+        record_failure(&self.metrics, error);
+        observe_failure(
+            &self.observations,
+            (session.id(), session.generation()),
+            stage,
+            error,
+        );
         Ok(())
     }
 
@@ -439,7 +626,15 @@ impl Nwipc {
         let outcome = self
             .runtime
             .route(session.handle, LifecycleEvent::RendererExited)
-            .inspect_err(|_| self.metrics.record_failure())?;
+            .inspect_err(|error| {
+                record_failure(&self.metrics, error);
+                observe_failure(
+                    &self.observations,
+                    (session.id(), session.generation()),
+                    FailureStage::Lifecycle,
+                    error,
+                );
+            })?;
         if !outcome.replaced {
             self.metrics.record_failure();
             return Err(configuration_error(
@@ -453,14 +648,38 @@ impl Nwipc {
             .map_err(|_| configuration_error(ErrorCode::Internal, "bootstrap catalog"))?
             .remove(&(outcome.active.session_id, outcome.active.generation))
             .ok_or_else(|| configuration_error(ErrorCode::Internal, "replacement bootstrap"))?;
-        self.sessions
-            .insert(outcome.active.session_id, outcome.active);
         self.metrics.record_replacement();
+        let exit = ErrorReport::new(
+            ErrorCategory::Closed,
+            ErrorCode::Closed,
+            Recoverability::ReplaceEndpoint,
+            "renderer generation exited",
+        );
+        record_failure(&self.metrics, &exit);
+        observe_failure(
+            &self.observations,
+            (session.id(), session.generation()),
+            FailureStage::Lifecycle,
+            &exit,
+        );
+        update_observation(
+            &self.observations,
+            (session.id(), session.generation()),
+            SessionState::Disconnected,
+            CleanupStatus::Complete,
+        );
+        insert_observation(
+            &self.observations,
+            (outcome.active.session_id, outcome.active.generation),
+            GenerationObservation::prepared(),
+        );
         Ok(Session {
             handle: outcome.active,
             protocol: self.configuration.protocol,
             peer_bootstrap: Some(pair.peer),
             renderer_bootstrap: Some(pair.renderer),
+            metrics: self.metrics.clone(),
+            observations: Arc::clone(&self.observations),
         })
     }
 
@@ -474,26 +693,47 @@ impl Nwipc {
             .runtime
             .state(session.handle)
             .is_ok_and(SessionState::is_terminal);
-        self.runtime.close(session.handle)?;
+        self.runtime.close(session.handle).inspect_err(|error| {
+            record_failure(&self.metrics, error);
+            observe_failure(
+                &self.observations,
+                (session.id(), session.generation()),
+                FailureStage::Cleanup,
+                error,
+            );
+        })?;
         if !was_closed {
             self.metrics.record_session_closed();
         }
+        let state = self.runtime.state(session.handle)?;
+        update_observation(
+            &self.observations,
+            (session.id(), session.generation()),
+            state,
+            CleanupStatus::Complete,
+        );
         Ok(())
     }
 
-    /// Returns a redacted operational snapshot with no payload, secret, name, ID, or native handle.
+    /// Returns a redacted snapshot with no payload, secret, provider name, or native handle.
     pub fn diagnostics(&self) -> DiagnosticsSnapshot {
-        let mut sessions = Vec::new();
-        for handle in self.sessions.values() {
-            if let Ok(state) = self.runtime.state(*handle) {
-                sessions.push(diagnostic_entry(
-                    handle.session_id,
-                    handle.generation,
-                    state,
-                    state.is_terminal(),
-                ));
-            }
-        }
+        let observations = self
+            .observations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let sessions = observations
+            .iter()
+            .map(|(&(session_id, generation), observation)| {
+                let mut observation = *observation;
+                if let Ok(state) = self.runtime.state(SessionHandle {
+                    session_id,
+                    generation,
+                }) {
+                    observation.state = state;
+                }
+                diagnostic_entry(session_id, generation, observation)
+            })
+            .collect();
         DiagnosticsSnapshot::new(self.metrics.snapshot(), sessions)
     }
 
@@ -507,11 +747,26 @@ impl Nwipc {
         session: &Session,
     ) -> Result<SessionDiagnostics, ErrorReport> {
         let state = self.runtime.state(session.handle)?;
+        let mut observation = self
+            .observations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(session.id(), session.generation()))
+            .copied()
+            .unwrap_or(GenerationObservation {
+                state,
+                cleanup: if state.is_terminal() {
+                    CleanupStatus::Complete
+                } else {
+                    CleanupStatus::Pending
+                },
+                last_failure: None,
+            });
+        observation.state = state;
         Ok(diagnostic_entry(
             session.id(),
             session.generation(),
-            state,
-            state.is_terminal(),
+            observation,
         ))
     }
 }
@@ -519,19 +774,85 @@ impl Nwipc {
 fn diagnostic_entry(
     session_id: SessionId,
     generation: Generation,
-    state: SessionState,
-    resources_cleaned: bool,
+    observation: GenerationObservation,
 ) -> SessionDiagnostics {
     SessionDiagnostics {
         session_id,
         generation,
-        state,
+        state: observation.state,
         topology: TransportTopology::direct(),
         capabilities: production_capabilities(),
         memory_backend: DiagnosticMemoryBackend::IoSurface,
         signal_backend: DiagnosticSignalBackend::Hybrid,
-        last_error: None,
-        resources_cleaned,
+        last_error: observation.last_failure.map(|failure| failure.code),
+        last_failure: observation.last_failure,
+        resources_cleaned: observation.cleanup == CleanupStatus::Complete,
+        cleanup: observation.cleanup,
+    }
+}
+
+fn record_failure(metrics: &Metrics, error: &ErrorReport) {
+    metrics.record_failure();
+    match error.category() {
+        ErrorCategory::Protocol | ErrorCategory::Bootstrap => {
+            metrics.record_validation_failure();
+        }
+        ErrorCategory::Security => metrics.record_authentication_failure(),
+        _ => {}
+    }
+}
+
+fn observe_failure(
+    observations: &ObservationCatalog,
+    key: (SessionId, Generation),
+    stage: FailureStage,
+    error: &ErrorReport,
+) {
+    let mut observations = observations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(observation) = observations.get_mut(&key) {
+        observation.last_failure = Some(FailureDiagnostics::from_report(stage, error));
+        if stage == FailureStage::Cleanup {
+            observation.cleanup = CleanupStatus::Failed;
+        }
+    }
+}
+
+fn update_observation(
+    observations: &ObservationCatalog,
+    key: (SessionId, Generation),
+    state: SessionState,
+    cleanup: CleanupStatus,
+) {
+    let mut observations = observations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(observation) = observations.get_mut(&key) {
+        observation.state = state;
+        observation.cleanup = cleanup;
+    }
+}
+
+fn insert_observation(
+    observations: &ObservationCatalog,
+    key: (SessionId, Generation),
+    observation: GenerationObservation,
+) {
+    let mut observations = observations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    observations.insert(key, observation);
+    let mut generations = observations
+        .keys()
+        .filter_map(|&(session_id, generation)| (session_id == key.0).then_some(generation))
+        .collect::<Vec<_>>();
+    generations.sort_unstable();
+    let remove = generations
+        .len()
+        .saturating_sub(RETAINED_GENERATIONS_PER_SESSION);
+    for generation in generations.into_iter().take(remove) {
+        observations.remove(&(key.0, generation));
     }
 }
 
@@ -579,6 +900,23 @@ mod tests {
     }
 
     #[test]
+    fn generation_diagnostics_history_is_bounded() {
+        let observations = Arc::new(Mutex::new(HashMap::new()));
+        let session_id = SessionId::from_u128(1).unwrap();
+        for value in 1..=20 {
+            insert_observation(
+                &observations,
+                (session_id, Generation::new(value).unwrap()),
+                GenerationObservation::prepared(),
+            );
+        }
+        let observations = observations.lock().unwrap();
+        assert_eq!(observations.len(), RETAINED_GENERATIONS_PER_SESSION);
+        assert!(!observations.contains_key(&(session_id, Generation::new(4).unwrap())));
+        assert!(observations.contains_key(&(session_id, Generation::new(5).unwrap())));
+    }
+
+    #[test]
     fn peer_environment_is_provider_erased() {
         let environment = PeerEnvironment {
             session_id: "01".repeat(16),
@@ -619,6 +957,23 @@ mod tests {
         let identity = session.id();
         let generation = session.generation();
         nwipc.observe_external_connection(&session).unwrap();
+        let authentication = ErrorReport::new(
+            ErrorCategory::Security,
+            ErrorCode::ProtocolViolation,
+            Recoverability::ReplaceEndpoint,
+            "redacted external authentication",
+        );
+        nwipc
+            .observe_external_failure(&session, FailureStage::Handshake, &authentication)
+            .unwrap();
+        assert_eq!(
+            nwipc.session_diagnostics(&session).unwrap().last_failure,
+            Some(FailureDiagnostics::from_report(
+                FailureStage::Handshake,
+                &authentication
+            ))
+        );
+        assert_eq!(nwipc.diagnostics().metrics.authentication_failures, 1);
 
         let replacement = nwipc.replace_renderer(&session).unwrap();
         assert_eq!(replacement.id(), identity);
@@ -631,6 +986,16 @@ mod tests {
             nwipc.session_diagnostics(&replacement).unwrap().state,
             SessionState::WaitingForRenderer
         );
+        let snapshot = nwipc.diagnostics();
+        assert_eq!(snapshot.sessions.len(), 2);
+        let old = snapshot
+            .sessions
+            .iter()
+            .find(|entry| entry.generation == generation)
+            .unwrap();
+        assert_eq!(old.state, SessionState::Disconnected);
+        assert_eq!(old.cleanup, CleanupStatus::Complete);
+        assert_eq!(old.last_error, Some(ErrorCode::Closed));
     }
 
     #[cfg(target_os = "macos")]
@@ -685,6 +1050,13 @@ mod tests {
                 b"production".to_vec()
             ))
         );
+        let error = renderer
+            .send(&vec![
+                0;
+                Configuration::default().maximum_message as usize + 1
+            ])
+            .unwrap_err();
+        assert_eq!(error.code(), ErrorCode::MessageTooLarge);
         renderer.close().unwrap();
         peer.join().unwrap();
         assert_eq!(
@@ -696,5 +1068,13 @@ mod tests {
         assert!(diagnostics.sessions[0].resources_cleaned);
         assert_eq!(diagnostics.metrics.messages_sent, 1);
         assert_eq!(diagnostics.metrics.messages_received, 1);
+        assert_eq!(diagnostics.metrics.failures, 1);
+        assert_eq!(
+            diagnostics.sessions[0].last_failure,
+            Some(FailureDiagnostics::from_report(
+                FailureStage::Transport,
+                &error
+            ))
+        );
     }
 }

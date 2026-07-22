@@ -18,7 +18,10 @@ use nwipc_protocol::{
     EndpointRole as ProtocolEndpointRole, HandshakeIdentity, InitiatorConfig, InitiatorHandshake,
     NegotiatedProtocol, ProtocolVersion, VersionRange,
 };
-use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent as RendererEvent};
+use nwipc_renderer_api::{
+    RendererTransport, SendDisposition, TransportDiagnostics as RendererTransportDiagnostics,
+    TransportEvent as RendererEvent,
+};
 use nwipc_renderer_bootstrap::RendererTransportFactory;
 use nwipc_signal_api::SignalDirection;
 use nwipc_signal_api::SignalSender;
@@ -631,6 +634,17 @@ impl RendererTransport for MacosRendererTransport {
         self.raw.channel.close()?;
         self.closed = true;
         Ok(())
+    }
+
+    fn diagnostics(&self) -> RendererTransportDiagnostics {
+        let diagnostics = self.raw.channel.diagnostics();
+        RendererTransportDiagnostics {
+            primary_wakeups: diagnostics.primary_wakeups,
+            polling_wakeups: diagnostics.polling_wakeups,
+            coalesced_wakeups: diagnostics.coalesced_wakeups,
+            polling_recoveries: diagnostics.polling_recoveries,
+            signal_failures: diagnostics.signal_failures,
+        }
     }
 }
 

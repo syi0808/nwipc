@@ -22,6 +22,20 @@ pub struct MetricsSnapshot {
     pub backpressure: u64,
     /// Writable recovery edges.
     pub writable: u64,
+    /// Primary provider wake-ups observed by a transport.
+    pub primary_wakeups: u64,
+    /// Correctness-poll wake-ups requested by a transport.
+    pub polling_wakeups: u64,
+    /// Notification posts suppressed because shared state was already pending.
+    pub coalesced_wakeups: u64,
+    /// Correctness polls which found shared-state progress independent of a notification.
+    pub polling_recoveries: u64,
+    /// Notification provider failures.
+    pub signal_failures: u64,
+    /// Validation or protocol-contract failures.
+    pub validation_failures: u64,
+    /// Authentication or trust failures.
+    pub authentication_failures: u64,
     /// Stable failures observed at a public boundary.
     pub failures: u64,
     /// Generation replacements.
@@ -38,6 +52,13 @@ struct Counters {
     bytes_received: AtomicU64,
     backpressure: AtomicU64,
     writable: AtomicU64,
+    primary_wakeups: AtomicU64,
+    polling_wakeups: AtomicU64,
+    coalesced_wakeups: AtomicU64,
+    polling_recoveries: AtomicU64,
+    signal_failures: AtomicU64,
+    validation_failures: AtomicU64,
+    authentication_failures: AtomicU64,
     failures: AtomicU64,
     replacements: AtomicU64,
 }
@@ -84,6 +105,29 @@ impl Metrics {
         increment(&self.0.writable, 1);
     }
 
+    /// Adds provider-independent wake-up observations.
+    pub fn record_wakeups(&self, primary: u64, polling: u64, coalesced: u64, recovered: u64) {
+        increment(&self.0.primary_wakeups, primary);
+        increment(&self.0.polling_wakeups, polling);
+        increment(&self.0.coalesced_wakeups, coalesced);
+        increment(&self.0.polling_recoveries, recovered);
+    }
+
+    /// Adds notification-provider failures.
+    pub fn record_signal_failures(&self, failures: u64) {
+        increment(&self.0.signal_failures, failures);
+    }
+
+    /// Records a validation or protocol-contract failure.
+    pub fn record_validation_failure(&self) {
+        increment(&self.0.validation_failures, 1);
+    }
+
+    /// Records an authentication or trust failure.
+    pub fn record_authentication_failure(&self) {
+        increment(&self.0.authentication_failures, 1);
+    }
+
     /// Records one stable public failure.
     pub fn record_failure(&self) {
         increment(&self.0.failures, 1);
@@ -105,6 +149,13 @@ impl Metrics {
             bytes_received: load(&self.0.bytes_received),
             backpressure: load(&self.0.backpressure),
             writable: load(&self.0.writable),
+            primary_wakeups: load(&self.0.primary_wakeups),
+            polling_wakeups: load(&self.0.polling_wakeups),
+            coalesced_wakeups: load(&self.0.coalesced_wakeups),
+            polling_recoveries: load(&self.0.polling_recoveries),
+            signal_failures: load(&self.0.signal_failures),
+            validation_failures: load(&self.0.validation_failures),
+            authentication_failures: load(&self.0.authentication_failures),
             failures: load(&self.0.failures),
             replacements: load(&self.0.replacements),
         }
@@ -135,12 +186,23 @@ mod tests {
         let clone = metrics.clone();
         metrics.record_sent(7);
         clone.record_failure();
+        clone.record_wakeups(2, 3, 4, 1);
+        clone.record_signal_failures(5);
+        clone.record_validation_failure();
+        clone.record_authentication_failure();
         assert_eq!(
             metrics.snapshot(),
             MetricsSnapshot {
                 messages_sent: 1,
                 bytes_sent: 7,
                 failures: 1,
+                primary_wakeups: 2,
+                polling_wakeups: 3,
+                coalesced_wakeups: 4,
+                polling_recoveries: 1,
+                signal_failures: 5,
+                validation_failures: 1,
+                authentication_failures: 1,
                 ..MetricsSnapshot::default()
             }
         );

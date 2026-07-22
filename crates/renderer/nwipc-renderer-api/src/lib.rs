@@ -52,6 +52,21 @@ pub enum TransportEvent {
     Error(ErrorReport),
 }
 
+/// Monotonic provider observations safe to aggregate into public metrics.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TransportDiagnostics {
+    /// Primary notification hints observed.
+    pub primary_wakeups: u64,
+    /// Correctness-poll wake-ups requested.
+    pub polling_wakeups: u64,
+    /// Notification posts suppressed while shared state was already pending.
+    pub coalesced_wakeups: u64,
+    /// Correctness polls which found shared-state progress independent of a hint.
+    pub polling_recoveries: u64,
+    /// Signal-provider failures.
+    pub signal_failures: u64,
+}
+
 /// Native data-plane half owned by one renderer port.
 pub trait RendererTransport {
     /// Accepts one complete binary message.
@@ -81,6 +96,11 @@ pub trait RendererTransport {
     ///
     /// Returns a typed transport error when close cannot be queued.
     fn close(&mut self) -> Result<(), ErrorReport>;
+
+    /// Returns monotonic, redacted provider observations when supported.
+    fn diagnostics(&self) -> TransportDiagnostics {
+        TransportDiagnostics::default()
+    }
 }
 
 /// Common lifecycle surface implemented by a renderer runtime.
