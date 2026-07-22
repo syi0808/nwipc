@@ -74,3 +74,8 @@
 - Darwin notification 유실이 message correctness를 깨지 않는다.
 - Generation 교체 후 stale callback이 새 endpoint에 전달되지 않는다.
 
+## Phase 4 구현 메모
+
+- Darwin `notify_register_check`/`notify_post`를 primary hint provider로 사용한다.
+- Adaptive poller는 1ms active에서 64ms maximum까지 backoff하며 shared-state drain 결과로 reset한다.
+- Hybrid listener는 primary event와 poll 모두 동일한 drain 경로로 전달하고 poll recovery를 diagnostics에 기록한다.

@@ -100,8 +100,8 @@ P1:
 P2:
 
 - [x] Bootstrap/peer/process harness
-- [ ] IOSurface와 Darwin/hybrid
-- [ ] Two-process provider contract
+- [x] IOSurface와 Darwin/hybrid
+- [x] Two-process provider contract
 
 P3:
 

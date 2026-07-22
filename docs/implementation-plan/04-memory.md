@@ -44,6 +44,12 @@
 - Read-only/read-write mapping 가능성
 - Process boundary와 hardened runtime에서 descriptor 전달 검증
 
+Phase 4 결정:
+
+- 최초 구현은 IOSurface global ID를 bootstrap descriptor로 사용한다.
+- 읽기 전용 권한은 safe mapping API에서 강제하며 native mapping 자체의 권한 분리는 후속 hardened-runtime 실험 대상으로 남긴다.
+- Descriptor와 mapping diagnostics에서는 native ID와 base address를 노출하지 않는다.
+
 검증:
 
 - 동일 process create/attach/raw byte visibility
@@ -64,4 +70,3 @@
 - Provider-neutral contract suite를 fake와 IOSurface가 함께 통과한다.
 - 두 native process가 IOSurface raw bytes를 교환한다.
 - Attach failure가 typed error/capability로 표현되고 silent fallback하지 않는다.
-

@@ -7,6 +7,7 @@ use std::process::ExitCode;
 const UNSAFE_CRATES: &[&str] = &[
     "nwipc-atomic",
     "nwipc-memory-iosurface",
+    "nwipc-signal-darwin",
     "nwipc-renderer-jsc",
     "nwipc-macos-spi",
     "nwipc-macos-bundle-shim",

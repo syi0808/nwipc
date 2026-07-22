@@ -134,6 +134,7 @@ name = "nwipc-memory-api"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -141,6 +142,8 @@ name = "nwipc-memory-iosurface"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-memory-api",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -221,6 +224,8 @@ name = "nwipc-region"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-memory-api",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -324,6 +329,8 @@ name = "nwipc-signal-darwin"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-signal-api",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -331,6 +338,8 @@ name = "nwipc-signal-hybrid"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-signal-api",
+ "nwipc-signal-poll",
 ]
 
 [[package]]
@@ -352,6 +361,9 @@ name = "nwipc-testkit"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-memory-api",
+ "nwipc-signal-api",
+ "nwipc-types",
 ]
 
 [[package]]
