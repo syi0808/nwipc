@@ -233,6 +233,7 @@ name = "nwipc-renderer-api"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -247,6 +248,8 @@ name = "nwipc-renderer-core"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-renderer-api",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -254,6 +257,9 @@ name = "nwipc-renderer-jsc"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-renderer-api",
+ "nwipc-renderer-core",
+ "nwipc-types",
 ]
 
 [[package]]

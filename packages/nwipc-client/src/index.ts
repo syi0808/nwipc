@@ -18,8 +18,9 @@ export class NwipcUnsupportedError extends Error {
 }
 
 export function connect(): NativeMessagePort {
-  if (globalThis.__nwipc === undefined) throw new NwipcUnsupportedError();
-  return new NativeMessagePort(globalThis.__nwipc.connect());
+  const binding = globalThis.__nwipc;
+  if (binding === undefined || typeof binding.connect !== "function") throw new NwipcUnsupportedError();
+  return new NativeMessagePort(binding.connect());
 }
 
-export { NativeMessagePort } from "@nwipc/client-core";
+export { NativeMessagePort, NwipcPortError } from "@nwipc/client-core";
