@@ -1,0 +1,67 @@
+# Memory 모듈 구현계획
+
+## 범위
+
+대상은 `nwipc-memory-api`, `nwipc-region`, `nwipc-memory-iosurface`다. API는 provider-neutral하고 IOSurface 구현만 macOS FFI를 소유한다.
+
+## `nwipc-memory-api`
+
+구현:
+
+- Owned region, mapping, renderer/peer descriptor associated type
+- Create/attach/map/drop ownership contract
+- Mapping length와 intended access 표현
+- Raw native descriptor를 API 밖으로 노출하지 않는 wrapper
+
+검증:
+
+- Fake provider 공통 contract suite
+- Length/access mismatch 거부
+- Descriptor transfer/clone/drop semantics
+
+## `nwipc-region`
+
+구현:
+
+- `Renderer`/`Peer` owner
+- `ReadOnly`/`ReadWrite` access
+- 방향별 region pair와 logical layout
+- Descriptor와 mapping lifecycle을 분리한 safe model
+
+## `nwipc-memory-iosurface`
+
+구현:
+
+- 방향별 IOSurface 두 개 생성
+- Byte length/alignment/base address 검증
+- Renderer와 peer에 전달할 descriptor 생성
+- Attach/map/lock/unlock/drop lifecycle
+- Sandbox/entitlement/capability diagnostics
+
+선행 실험:
+
+- IOSurface ID와 Mach representation 중 실제 WebContent/peer 환경에 적합한 방식 비교
+- Read-only/read-write mapping 가능성
+- Process boundary와 hardened runtime에서 descriptor 전달 검증
+
+검증:
+
+- 동일 process create/attach/raw byte visibility
+- 두 native process attach/read/write
+- arm64/x86_64
+- Invalid/stale descriptor와 wrong size 거부
+- Protocol/ring 없이 provider만 독립 검증
+
+## 안전성 규칙
+
+- Descriptor length와 mapping 범위를 pointer 생성 전에 검증한다.
+- Raw pointer lifetime은 owned mapping보다 길 수 없다.
+- Native handle/ID는 Debug/diagnostics에서 redaction한다.
+- Generation replacement 때 기존 mapping을 재사용하지 않는다.
+
+## 완료 기준
+
+- Provider-neutral contract suite를 fake와 IOSurface가 함께 통과한다.
+- 두 native process가 IOSurface raw bytes를 교환한다.
+- Attach failure가 typed error/capability로 표현되고 silent fallback하지 않는다.
+
