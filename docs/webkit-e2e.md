@@ -82,8 +82,12 @@ cargo xtask webkit-e2e
 - 첫 navigation에서 bundle load marker를 한 번 관찰한다.
 - Renderer가 zero/exact-inline/fragmented/maximum binary payload를 보내고 peer가 동일 bytes를 echo한다.
 - Saturation이 backpressure 상태에 진입하고 low watermark 아래에서 writable edge를 한 번 회복한다.
+- Renderer-to-peer notification을 전부 drop/duplicate/250 ms delay해도 polling drain이 같은 payload를 한 번만 전달한다.
+- Commit 전 writer 종료는 peer에 bytes를 노출하지 않고 commit 후 notification 전 종료는 complete payload를 노출한다.
+- Renderer와 peer 강제 종료 뒤 public runtime이 같은 session identity에 새 generation/resource를 발급한다.
 - Echo 동안 host harness와 `xtask`는 payload bytes를 읽거나 복사하지 않는다.
 - `_killWebContentProcessAndResetState` 뒤 process ID가 바뀌고 새 navigation이 완료된다.
+- 교체 WebContent가 이전 generation의 completion notification을 발생시키지 않는다.
 - App harness가 제한 시간 안에 exit code 0으로 종료한다.
 
 ## Failure matrix
@@ -98,6 +102,8 @@ cargo xtask webkit-e2e
 | initial bundle load timeout | harness exit 3 |
 | renderer↔peer transport timeout/mismatch | harness exit 4와 bounded stage 또는 peer non-zero exit |
 | replacement process/navigation timeout | harness exit 5 |
+| writer crash marker/visibility 불일치 | scenario별 App/peer log와 non-zero `xtask` exit |
+| peer kill 후 generation 미교체 | public facade replacement 검증 실패와 non-zero `xtask` exit |
 | child signal/crash | `xtask`가 exit status와 log 경로 보고 |
 
 ## Entitlement 정책
@@ -110,8 +116,6 @@ validation 비활성화 entitlement를 추가하지 않는다. 필요성이 발�
 
 - Developer ID notarization/stapling
 - Intel/x86_64와 macOS minor-release matrix
-- Dropped/duplicate/delayed notification process fault matrix
-- Commit 전후 writer crash와 generation-qualified replacement transport
 - Origin별 binding policy
 
 이 제한은 Phase 7 [지원 매트릭스](support-matrix.md)와 [위협 모델](security.md)에 반영되어

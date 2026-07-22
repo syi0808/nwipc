@@ -145,6 +145,36 @@ impl ChannelEndpoint {
         Ok(ChannelSend::from(outcome))
     }
 
+    /// Writes one inline message without publishing its producer cursor.
+    ///
+    /// This is available only to process-crash hardening harnesses. Returning successfully proves
+    /// that shared bytes were written while remaining invisible to the consumer.
+    #[cfg(feature = "fault-injection")]
+    #[doc(hidden)]
+    pub fn prepare_uncommitted_for_crash(&mut self, payload: &[u8]) -> Result<(), ErrorReport> {
+        if self.local_closed || self.remote_closed {
+            return Err(channel_error(ErrorCode::Closed, Recoverability::Terminal));
+        }
+        let flow = self.refresh_flow()?;
+        if flow.backpressured {
+            return Err(channel_error(
+                ErrorCode::Backpressured,
+                Recoverability::Retryable,
+            ));
+        }
+        let fragments = self.fragmenter.fragments(payload)?;
+        let [fragment] = fragments.as_slice() else {
+            return Err(channel_error(
+                ErrorCode::MessageTooLarge,
+                Recoverability::Terminal,
+            ));
+        };
+        let _pending =
+            self.writer
+                .prepare(RecordKind::Data, fragment.flags(), fragment.payload())?;
+        Ok(())
+    }
+
     /// Sends a graceful close after previously accepted records.
     ///
     /// # Errors

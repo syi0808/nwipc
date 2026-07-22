@@ -9,6 +9,7 @@ default-run = "nwipc-native-peer-example"
 
 [dependencies]
 nwipc-peer = { version = "=0.0.0", path = "../../crates/peer/nwipc-peer" }
+nwipc-peer-core.workspace = true
 
 [dev-dependencies]
 nwipc = { path = "../../crates/facade/nwipc" }

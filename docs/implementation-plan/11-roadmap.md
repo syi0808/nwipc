@@ -145,14 +145,14 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record, protocol, validation | Production 통합 | M5 WebKit E2E에서 production endpoint 경로 검증 |
-| Ring, flow, channel, fragmentation | Production 통합 | M5 signed WebKit process에서 같은 public transport 사용 |
-| IOSurface, Darwin, polling/hybrid | Production 통합 | M5 WebKit sandbox/수명 failure matrix 검증 |
-| Bootstrap schema/codec | Production 통합 | M5 renderer plist가 동일 descriptor bundle을 전달 |
-| Peer core/facade | Production 통합 | M5 peer kill/replacement를 public facade로 검증 |
-| Session, session machine, runtime | Production 통합 | M5 reload/WebContent kill generation replacement 검증 |
-| Renderer core, JSC, WebKit control plane | Production 통합 | M5 bundle에서 public renderer factory 호출 |
-| WebKit process smoke | Provider 통합 | Raw echo frame 대신 public renderer↔peer transport 사용 |
+| Domain, layout, record, protocol, validation | E2E 검증 | M6 release diagnostics schema 확정 |
+| Ring, flow, channel, fragmentation | E2E 검증 | M6 counter와 cross-architecture release gate |
+| IOSurface, Darwin, polling/hybrid | E2E 검증 | Trusted identity와 x86_64 matrix |
+| Bootstrap schema/codec | E2E 검증 | M6 release compatibility 규칙 확정 |
+| Peer core/facade | E2E 검증 | M6 failure diagnostics 확정 |
+| Session, session machine, runtime | E2E 검증 | M6 lifecycle snapshot 확정 |
+| Renderer core, JSC, WebKit control plane | E2E 검증 | Origin별 binding policy |
+| WebKit process smoke | E2E 검증 | Trusted identity와 지원 OS matrix 확대 |
 | Diagnostics, metrics, top-level facade | Production 통합 | M6 failure/wakeup 세부 counter와 release schema 확정 |
 
 독립 provider와 signed WebKit smoke는 실제 환경 가능성을 검증했지만 전체 product call graph의 완료를
@@ -240,8 +240,8 @@ IOSurface와 Darwin descriptor bundle을 generation에 묶고, peer의 inherited
 
 - [x] Raw `EchoFrame`/mapping polling을 production protocol/channel transport로 교체
 - [x] Zero/exact/max/fragmented binary payload와 saturation/writable recovery 검증
-- [ ] Dropped/duplicate/delayed notification과 polling recovery 검증
-- [ ] Commit 전후 writer crash, peer/WebContent kill, reload와 generation replacement 검증
+- [x] Dropped/duplicate/delayed notification과 polling recovery 검증
+- [x] Commit 전후 writer crash, peer/WebContent kill, reload와 generation replacement 검증
 - [x] Host가 lifecycle과 completion만 관찰하고 payload byte에는 접근하지 않음을 구조적으로 검사
 
 1차 통합은 facade가 발급한 canonical renderer bootstrap을 host가 opaque property-list 값으로 전달하고,
@@ -250,9 +250,12 @@ Native peer helper도 `Peer::initialize`와 bootstrap-only stdin을 사용한다
 16 KiB+1, 1 MiB payload 및 high/low watermark recovery를 실제 IOSurface/Darwin-hybrid process에서
 검증하며 AppKit source와 architecture gate는 raw memory/payload frame 의존을 거부한다.
 
-2026-07-22 macOS 26.5.2 (25F84) arm64에서 ad-hoc hardened `cargo xtask webkit-e2e`가 통과했다.
-생성 artifact와 실행 로그 위치는 `target/NWIPC-E2E.app`, `target/webkit-e2e/`다. 이 증거는 아직
-notification fault와 crash/generation matrix를 포함하지 않으므로 M5 완료 선언에는 사용하지 않는다.
+2026-07-22 macOS 26.5.2 (25F84) arm64에서 ad-hoc hardened `cargo xtask webkit-e2e` 전체 matrix가
+통과했다. 생성 artifact와 scenario별 실행 로그 위치는 `target/NWIPC-E2E.app`,
+`target/webkit-e2e/`다. Fault build는 feature-gated hook으로 notification post를 drop/duplicate/delay하고,
+writer를 cursor commit 전과 notification 전 commit 후에 종료한다. Peer helper의 관찰 결과와 public facade의
+동일 session ID/새 generation replacement가 각각 partial invisibility, committed visibility, stale resource
+격리를 검증한다.
 
 완료: Signed/hardened AppKit harness에서 public renderer↔peer 경로가 host relay 없이 통과하고 stale
 message, callback, resource가 새 generation에 전달되지 않는다.
@@ -310,7 +313,7 @@ Operations:
 |---|---|---|---|---|
 | 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
 | M4 public endpoint integration | `nwipc`, `nwipc-macos-transport`, `nwipc-peer` | `public_facade_connects_renderer_and_peer_without_payload_stream`, `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | Rust workspace test | macOS IOSurface + Darwin/hybrid |
-| M5 production WebKit transport (partial) | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` | manual signed E2E | macOS 26.5.2 arm64 ad-hoc; fault/crash matrix pending |
+| M5 production WebKit E2E | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` notification/writer/peer/replacement matrix | manual signed E2E | macOS 26.5.2 arm64 ad-hoc; trusted identity와 x86_64는 미검증 |
 
 - Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
 - 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.

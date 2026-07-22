@@ -10,6 +10,9 @@ layer = "data-plane"
 stability = "experimental"
 owner = "nwipc"
 
+[features]
+fault-injection = []
+
 [dependencies]
 nwipc-atomic.workspace = true
 nwipc-error.workspace = true

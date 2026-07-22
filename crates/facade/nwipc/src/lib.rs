@@ -392,7 +392,7 @@ impl Nwipc {
             session.id(),
             session.generation(),
             self.configuration.protocol,
-            &mut MacosRendererTransportFactory,
+            &mut MacosRendererTransportFactory::default(),
         )
         .inspect_err(|_| self.metrics.record_failure())?;
         for event in [
@@ -406,6 +406,62 @@ impl Nwipc {
             inner: transport,
             metrics: self.metrics.clone(),
         }))
+    }
+
+    /// Records completion of an externally hosted renderer/peer handshake.
+    ///
+    /// Use this after an injected-bundle host observes the production transport completion. The
+    /// host reports lifecycle only and does not inspect application payload bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stale-generation or invalid lifecycle transition error.
+    pub fn observe_external_connection(&mut self, session: &Session) -> Result<(), ErrorReport> {
+        for event in [
+            LifecycleEvent::RendererAttached,
+            LifecycleEvent::PeerAttached,
+            LifecycleEvent::HandshakeCompleted,
+        ] {
+            self.runtime.route(session.handle, event)?;
+        }
+        Ok(())
+    }
+
+    /// Invalidates a terminated `WebContent` generation and prepares its replacement.
+    ///
+    /// The returned handle keeps the logical session identity but owns fresh mappings, signals,
+    /// secret, bootstrap values, and generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stale-generation, lifecycle, provider preparation, or bootstrap catalog error.
+    pub fn replace_renderer(&mut self, session: &Session) -> Result<Session, ErrorReport> {
+        let outcome = self
+            .runtime
+            .route(session.handle, LifecycleEvent::RendererExited)
+            .inspect_err(|_| self.metrics.record_failure())?;
+        if !outcome.replaced {
+            self.metrics.record_failure();
+            return Err(configuration_error(
+                ErrorCode::InvalidStateTransition,
+                "replace external renderer generation",
+            ));
+        }
+        let pair = self
+            .catalog
+            .lock()
+            .map_err(|_| configuration_error(ErrorCode::Internal, "bootstrap catalog"))?
+            .remove(&(outcome.active.session_id, outcome.active.generation))
+            .ok_or_else(|| configuration_error(ErrorCode::Internal, "replacement bootstrap"))?;
+        self.sessions
+            .insert(outcome.active.session_id, outcome.active);
+        self.metrics.record_replacement();
+        Ok(Session {
+            handle: outcome.active,
+            protocol: self.configuration.protocol,
+            peer_bootstrap: Some(pair.peer),
+            renderer_bootstrap: Some(pair.renderer),
+        })
     }
 
     /// Idempotently closes and releases a session generation.
@@ -553,6 +609,28 @@ mod tests {
             )
             .unwrap();
         assert!(session.write_renderer_bootstrap(&mut Vec::new()).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn external_renderer_exit_replaces_public_generation_and_rejects_stale_handle() {
+        let mut nwipc = Nwipc::initialize().unwrap();
+        let session = nwipc.create_session().unwrap();
+        let identity = session.id();
+        let generation = session.generation();
+        nwipc.observe_external_connection(&session).unwrap();
+
+        let replacement = nwipc.replace_renderer(&session).unwrap();
+        assert_eq!(replacement.id(), identity);
+        assert_ne!(replacement.generation(), generation);
+        assert_eq!(
+            nwipc.session_diagnostics(&session).unwrap_err().code(),
+            ErrorCode::StaleGeneration
+        );
+        assert_eq!(
+            nwipc.session_diagnostics(&replacement).unwrap().state,
+            SessionState::WaitingForRenderer
+        );
     }
 
     #[cfg(target_os = "macos")]

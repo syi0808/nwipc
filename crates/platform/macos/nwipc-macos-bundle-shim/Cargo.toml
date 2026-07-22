@@ -13,6 +13,9 @@ owner = "nwipc"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+e2e-fault-injection = ["nwipc-macos-transport/fault-injection"]
+
 [dependencies]
 nwipc-bootstrap-codec.workspace = true
 nwipc-error.workspace = true

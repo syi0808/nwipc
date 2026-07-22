@@ -9,6 +9,8 @@ use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_bundle_api::{BundleEntrypoint, BundleEvent};
 #[cfg(target_os = "macos")]
 use nwipc_macos_transport::MacosRendererTransportFactory;
+#[cfg(all(target_os = "macos", feature = "e2e-fault-injection"))]
+use nwipc_macos_transport::{FaultInjection, NotificationFault, WriterCrashPoint};
 #[cfg(target_os = "macos")]
 use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent};
 #[cfg(target_os = "macos")]
@@ -34,6 +36,20 @@ struct E2eConfiguration {
     load_notification: String,
     transport_notification: String,
     timeout: std::time::Duration,
+    #[cfg(feature = "e2e-fault-injection")]
+    fault: E2eFault,
+}
+
+#[cfg(all(target_os = "macos", feature = "e2e-fault-injection"))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum E2eFault {
+    #[default]
+    None,
+    NotificationDropped,
+    NotificationDuplicate,
+    NotificationDelayed,
+    WriterBeforeCommit,
+    WriterAfterCommit,
 }
 
 /// Installs the Rust orchestration object before `WebKit` invokes the exported entrypoint.
@@ -150,9 +166,12 @@ fn start_e2e_transport_matrix() {
         .spawn(|| {
             if let Err(error) = run_e2e_transport_matrix() {
                 if let Some(configuration) = E2E_CONFIGURATION.get() {
+                    let stage = get_e2e_state(&configuration.transport_notification)
+                        .unwrap_or_default()
+                        .min(10_000);
                     set_e2e_state(
                         &configuration.transport_notification,
-                        2000 + error.code() as u64,
+                        2000 + stage * 100 + error.code() as u64,
                     );
                     post_e2e_notification(
                         &configuration.transport_notification,
@@ -175,15 +194,64 @@ fn run_e2e_transport_matrix() -> Result<(), ErrorReport> {
     let session = envelope.session_id();
     let generation = envelope.generation();
     let protocol = envelope.protocols().minimum();
-    let mut transport = RendererBootstrap::open_transport(
-        envelope,
-        session,
-        generation,
-        protocol,
-        &mut MacosRendererTransportFactory,
-    )?;
+    #[cfg(feature = "e2e-fault-injection")]
+    let mut factory = match configuration.fault {
+        E2eFault::None => MacosRendererTransportFactory::default(),
+        E2eFault::NotificationDropped => {
+            fault_factory(NotificationFault::Dropped, WriterCrashPoint::None)
+        }
+        E2eFault::NotificationDuplicate => {
+            fault_factory(NotificationFault::Duplicate, WriterCrashPoint::None)
+        }
+        E2eFault::NotificationDelayed => {
+            fault_factory(NotificationFault::Delayed, WriterCrashPoint::None)
+        }
+        E2eFault::WriterBeforeCommit => {
+            fault_factory(NotificationFault::None, WriterCrashPoint::BeforeCommit)
+        }
+        E2eFault::WriterAfterCommit => {
+            fault_factory(NotificationFault::None, WriterCrashPoint::AfterCommit)
+        }
+    };
+    #[cfg(not(feature = "e2e-fault-injection"))]
+    let mut factory = MacosRendererTransportFactory::default();
+    let mut transport =
+        RendererBootstrap::open_transport(envelope, session, generation, protocol, &mut factory)?;
     let deadline = std::time::Instant::now() + configuration.timeout;
     set_e2e_state(&configuration.transport_notification, 20);
+    #[cfg(feature = "e2e-fault-injection")]
+    if configuration.fault == E2eFault::None {
+        run_standard_transport_matrix(
+            &mut transport,
+            &configuration.transport_notification,
+            deadline,
+        )?;
+    } else {
+        let fault_payload = payload(257, 0xf017_f017);
+        let _ = transport.send(&fault_payload)?;
+        wait_for_echo(&mut transport, &fault_payload, deadline)?;
+    }
+    #[cfg(not(feature = "e2e-fault-injection"))]
+    run_standard_transport_matrix(
+        &mut transport,
+        &configuration.transport_notification,
+        deadline,
+    )?;
+    transport.close()?;
+    set_e2e_state(&configuration.transport_notification, 1);
+    post_e2e_notification(
+        &configuration.transport_notification,
+        E2E_TRANSPORT_NOTIFICATION_PREFIX,
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn run_standard_transport_matrix(
+    transport: &mut impl RendererTransport,
+    notification: &str,
+    deadline: std::time::Instant,
+) -> Result<(), ErrorReport> {
     for length in [
         0,
         EXACT_INLINE_LENGTH,
@@ -192,11 +260,11 @@ fn run_e2e_transport_matrix() -> Result<(), ErrorReport> {
     ] {
         let payload = payload(length, u64::try_from(length).unwrap_or(u64::MAX));
         let _ = transport.send(&payload)?;
-        wait_for_echo(&mut transport, &payload, deadline)?;
+        wait_for_echo(transport, &payload, deadline)?;
     }
 
     let saturation_payload = payload(4096, 0xfeed_beef);
-    set_e2e_state(&configuration.transport_notification, 30);
+    set_e2e_state(notification, 30);
     let mut outstanding = 0_usize;
     loop {
         outstanding = outstanding
@@ -206,44 +274,54 @@ fn run_e2e_transport_matrix() -> Result<(), ErrorReport> {
             break;
         }
         if outstanding > 4096 {
+            set_e2e_state(notification, 301);
             return Err(shim_error("E2E transport did not backpressure"));
         }
     }
     let mut writable = false;
-    set_e2e_state(&configuration.transport_notification, 40);
+    set_e2e_state(notification, 40);
     while outstanding != 0 || !writable {
         if std::time::Instant::now() >= deadline {
+            set_e2e_state(notification, 404);
             return Err(shim_error("E2E writable recovery timeout"));
         }
         match transport.poll()? {
             Some(TransportEvent::Message(payload)) if payload == saturation_payload => {
                 outstanding -= 1;
                 if outstanding == 0 {
-                    set_e2e_state(&configuration.transport_notification, 41);
+                    set_e2e_state(notification, 41);
                 } else if outstanding % 32 == 0 {
                     set_e2e_state(
-                        &configuration.transport_notification,
+                        notification,
                         1000 + u64::try_from(outstanding).unwrap_or(u64::MAX - 1000),
                     );
                 }
             }
             Some(TransportEvent::Writable) => {
                 writable = true;
-                set_e2e_state(&configuration.transport_notification, 42);
+                set_e2e_state(notification, 42);
             }
             Some(TransportEvent::Error(error)) => return Err(error),
-            Some(_) => return Err(shim_error("E2E saturation echo mismatch")),
+            Some(_) => {
+                set_e2e_state(notification, 405);
+                return Err(shim_error("E2E saturation echo mismatch"));
+            }
             None => std::thread::sleep(std::time::Duration::from_millis(1)),
         }
     }
-    set_e2e_state(&configuration.transport_notification, 50);
-    transport.close()?;
-    set_e2e_state(&configuration.transport_notification, 1);
-    post_e2e_notification(
-        &configuration.transport_notification,
-        E2E_TRANSPORT_NOTIFICATION_PREFIX,
-    );
+    set_e2e_state(notification, 50);
     Ok(())
+}
+
+#[cfg(all(target_os = "macos", feature = "e2e-fault-injection"))]
+fn fault_factory(
+    notification: NotificationFault,
+    writer_crash: WriterCrashPoint,
+) -> MacosRendererTransportFactory {
+    MacosRendererTransportFactory::with_fault_injection(FaultInjection {
+        notification,
+        writer_crash,
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -266,6 +344,30 @@ fn set_e2e_state(name: &str, state: u64) {
             let _ = notify_set_state(token, state);
             let _ = notify_cancel(token);
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn get_e2e_state(name: &str) -> Option<u64> {
+    use std::ffi::{CString, c_char};
+
+    #[link(name = "System")]
+    unsafe extern "C" {
+        fn notify_register_check(name: *const c_char, token: *mut i32) -> u32;
+        fn notify_get_state(token: i32, state: *mut u64) -> u32;
+        fn notify_cancel(token: i32) -> u32;
+    }
+
+    let name = CString::new(name).ok()?;
+    let mut token = 0;
+    let mut state = 0;
+    unsafe {
+        if notify_register_check(name.as_ptr(), &raw mut token) != 0 {
+            return None;
+        }
+        let status = notify_get_state(token, &raw mut state);
+        let _ = notify_cancel(token);
+        (status == 0).then_some(state)
     }
 }
 
@@ -347,6 +449,16 @@ fn configure_e2e(bundle: *mut c_void) {
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|seconds| (1..=300).contains(seconds))
         .unwrap_or(20);
+    #[cfg(feature = "e2e-fault-injection")]
+    let fault = match copy_bundle_parameter(bundle, "nwipc.e2e.fault").as_deref() {
+        None | Some("" | "none" | "normal" | "peer-kill") => E2eFault::None,
+        Some("notification-dropped") => E2eFault::NotificationDropped,
+        Some("notification-duplicate") => E2eFault::NotificationDuplicate,
+        Some("notification-delayed") => E2eFault::NotificationDelayed,
+        Some("writer-before-commit") => E2eFault::WriterBeforeCommit,
+        Some("writer-after-commit") => E2eFault::WriterAfterCommit,
+        Some(_) => return,
+    };
     if decode_hex(&renderer_bootstrap).is_none()
         || !load_notification.starts_with(E2E_BUNDLE_LOAD_NOTIFICATION_PREFIX)
         || !transport_notification.starts_with(E2E_TRANSPORT_NOTIFICATION_PREFIX)
@@ -358,6 +470,8 @@ fn configure_e2e(bundle: *mut c_void) {
         load_notification,
         transport_notification,
         timeout: std::time::Duration::from_secs(timeout),
+        #[cfg(feature = "e2e-fault-injection")]
+        fault,
     });
 }
 

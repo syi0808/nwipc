@@ -10,6 +10,9 @@ layer = "platform"
 stability = "experimental"
 owner = "nwipc"
 
+[features]
+fault-injection = ["nwipc-channel-transport/fault-injection"]
+
 [dependencies]
 nwipc-bootstrap-schema.workspace = true
 nwipc-capabilities.workspace = true

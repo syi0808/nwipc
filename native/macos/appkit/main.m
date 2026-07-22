@@ -119,6 +119,32 @@ static BOOL WaitForNotification(int notificationToken, NSTimeInterval timeout) {
     return NO;
 }
 
+static BOOL WaitForCrashEvidence(int notificationToken, NSTimeInterval timeout, NavigationObserver *observer) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    BOOL bundleLoaded = NO;
+    while ([deadline timeIntervalSinceNow] > 0) {
+        int changed = 0;
+        if (notify_check(notificationToken, &changed) == NOTIFY_STATUS_OK && changed != 0) {
+            bundleLoaded = YES;
+        }
+        if (bundleLoaded && observer.terminated) {
+            return YES;
+        }
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    return NO;
+}
+
+static void TerminateWebContent(WKWebView *webView, NavigationObserver *observer) {
+    SendVoid(webView, "_killWebContentProcessAndResetState");
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2.0];
+    while (!observer.terminated && [deadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc != 3) {
@@ -170,6 +196,14 @@ int main(int argc, const char *argv[]) {
         SendVoidId(privateConfiguration, "setInjectedBundleURL:", [NSURL fileURLWithPath:bundlePath]);
         id processPool = SendIdId(SendId(processPoolClass, "alloc"), "_initWithConfiguration:", privateConfiguration);
         SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"1", @"nwipc.e2e.enabled");
+        const char *fault = getenv("NWIPC_WEBKIT_E2E_FAULT");
+        if (fault == NULL) {
+            fault = "none";
+        }
+        BOOL writerCrash = strcmp(fault, "writer-before-commit") == 0 ||
+                           strcmp(fault, "writer-after-commit") == 0;
+        SendVoidIdId(processPool, "_setObject:forBundleParameter:",
+                     [NSString stringWithUTF8String:fault], @"nwipc.e2e.fault");
         if (!SetBundleParameter(processPool, @"nwipc.e2e.renderer-bootstrap", "NWIPC_WEBKIT_E2E_RENDERER_BOOTSTRAP") ||
             !SetBundleParameter(processPool, @"nwipc.e2e.load-notification", "NWIPC_WEBKIT_E2E_NOTIFICATION") ||
             !SetBundleParameter(processPool, @"nwipc.e2e.transport-notification", "NWIPC_WEBKIT_E2E_TRANSPORT_NOTIFICATION") ||
@@ -195,6 +229,19 @@ int main(int argc, const char *argv[]) {
         [window orderFrontRegardless];
 
         [webView loadHTMLString:@"<!doctype html><title>nwipc-e2e-1</title>" baseURL:nil];
+        if (writerCrash) {
+            if (!WaitForCrashEvidence(notificationToken, timeout, observer)) {
+                fprintf(stderr, "timeout: writer crash evidence fault=%s terminated=%s\n",
+                        fault, observer.terminated ? "yes" : "no");
+                notify_cancel(notificationToken);
+                notify_cancel(transportNotificationToken);
+                return 6;
+            }
+            notify_cancel(notificationToken);
+            notify_cancel(transportNotificationToken);
+            printf("webkit-e2e-fault: %s=terminated\n", fault);
+            return 0;
+        }
         if (!WaitForInitialLoad(1, notificationToken, timeout, observer)) {
             fprintf(stderr, "timeout: initial WebContent bundle load; navigation=%lu error=%s\n",
                     (unsigned long)observer.finishes,
@@ -207,6 +254,7 @@ int main(int argc, const char *argv[]) {
             uint64_t transportState = 0;
             notify_get_state(transportNotificationToken, &transportState);
             fprintf(stderr, "timeout: renderer to native-peer production transport matrix stage=%llu\n", transportState);
+            TerminateWebContent(webView, observer);
             notify_cancel(notificationToken);
             notify_cancel(transportNotificationToken);
             return 4;
@@ -214,6 +262,7 @@ int main(int argc, const char *argv[]) {
         uint64_t transportState = 0;
         if (notify_get_state(transportNotificationToken, &transportState) != NOTIFY_STATUS_OK || transportState != 1) {
             fprintf(stderr, "failed: production transport matrix stage=%llu\n", transportState);
+            TerminateWebContent(webView, observer);
             notify_cancel(notificationToken);
             notify_cancel(transportNotificationToken);
             return 4;
@@ -233,10 +282,28 @@ int main(int argc, const char *argv[]) {
             notify_cancel(transportNotificationToken);
             return 5;
         }
+        NSDate *staleDeadline = [NSDate dateWithTimeIntervalSinceNow:0.25];
+        while ([staleDeadline timeIntervalSinceNow] > 0) {
+            int changed = 0;
+            if (notify_check(transportNotificationToken, &changed) == NOTIFY_STATUS_OK && changed != 0) {
+                uint64_t staleState = 0;
+                notify_get_state(transportNotificationToken, &staleState);
+                if (staleState == 1) {
+                    fprintf(stderr, "failed: stale generation completed after WebContent replacement\n");
+                    notify_cancel(notificationToken);
+                    notify_cancel(transportNotificationToken);
+                    return 7;
+                }
+            }
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+        }
+        observer.terminated = NO;
+        TerminateWebContent(webView, observer);
 
         notify_cancel(notificationToken);
         notify_cancel(transportNotificationToken);
-        printf("webkit-e2e: initial-load=ok production-transport=ok boundaries=ok backpressure=ok replacement-process=ok hardened-process=ok\n");
+        printf("webkit-e2e: initial-load=ok production-transport=ok boundaries=ok backpressure=ok replacement-process=ok hardened-process=ok fault=%s\n", fault);
         return 0;
     }
 }

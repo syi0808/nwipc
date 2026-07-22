@@ -418,9 +418,13 @@ fn prepare_e2e_artifacts(root: &Path, target: &Path, work: &Path) -> Result<E2eA
     };
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     run_checked(
-        Command::new(&cargo)
-            .current_dir(root)
-            .args(["build", "-p", "nwipc-macos-bundle-shim"]),
+        Command::new(&cargo).current_dir(root).args([
+            "build",
+            "-p",
+            "nwipc-macos-bundle-shim",
+            "--features",
+            "e2e-fault-injection",
+        ]),
         "build injected bundle shim",
     )?;
     run_checked(
@@ -462,11 +466,13 @@ fn prepare_e2e_artifacts(root: &Path, target: &Path, work: &Path) -> Result<E2eA
         &artifacts.peer_executable,
     )
     .map_err(|error| error.to_string())?;
-    fs::copy(
-        root.join("native/macos/appkit/Info.plist"),
-        app_contents.join("Info.plist"),
-    )
-    .map_err(|error| error.to_string())?;
+    let app_plist = fs::read_to_string(root.join("native/macos/appkit/Info.plist"))
+        .map_err(|error| error.to_string())?
+        .replace(
+            "dev.nwipc.webkit-e2e",
+            &format!("dev.nwipc.webkit-e2e.run-{}", std::process::id()),
+        );
+    fs::write(app_contents.join("Info.plist"), app_plist).map_err(|error| error.to_string())?;
     copy_tree(&target.join("NWIPC.bundle"), &artifacts.embedded_bundle)?;
     Ok(artifacts)
 }
@@ -497,15 +503,115 @@ fn sign_e2e_artifacts(root: &Path, artifacts: &E2eArtifacts, identity: &str) -> 
 #[cfg(target_os = "macos")]
 fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Result<(), String> {
     let mut nwipc = nwipc::Nwipc::initialize().map_err(|error| error.to_string())?;
-    let mut session = nwipc.create_session().map_err(|error| error.to_string())?;
+    let mut normal_session = nwipc.create_session().map_err(|error| error.to_string())?;
+    let normal_output = run_e2e_scenario(
+        artifacts,
+        work,
+        timeout,
+        &mut normal_session,
+        "normal",
+        "normal",
+        ScenarioExpectation::Success("production-transport=ok"),
+    )?;
+    nwipc
+        .observe_external_connection(&normal_session)
+        .map_err(|error| error.to_string())?;
+    nwipc
+        .close(&normal_session)
+        .map_err(|error| error.to_string())?;
+
+    for fault in [
+        "notification-dropped",
+        "notification-duplicate",
+        "notification-delayed",
+    ] {
+        let mut session = nwipc.create_session().map_err(|error| error.to_string())?;
+        run_e2e_scenario(
+            artifacts,
+            work,
+            timeout,
+            &mut session,
+            fault,
+            "normal",
+            ScenarioExpectation::Success("production-transport=ok"),
+        )?;
+        nwipc
+            .observe_external_connection(&session)
+            .map_err(|error| error.to_string())?;
+        nwipc.close(&session).map_err(|error| error.to_string())?;
+    }
+
+    let mut crash_session = nwipc.create_session().map_err(|error| error.to_string())?;
+    let logical_session = crash_session.id();
+    for (fault, peer_mode, expectation) in [
+        (
+            "writer-before-commit",
+            "writer-before-commit",
+            ScenarioExpectation::Success("writer-before-commit-hidden=ok"),
+        ),
+        (
+            "writer-after-commit",
+            "writer-after-commit",
+            ScenarioExpectation::Success("writer-after-commit-visible=ok"),
+        ),
+        ("peer-kill", "peer-kill", ScenarioExpectation::PeerCrash),
+    ] {
+        let old_generation = crash_session.generation();
+        run_e2e_scenario(
+            artifacts,
+            work,
+            timeout,
+            &mut crash_session,
+            fault,
+            peer_mode,
+            expectation,
+        )?;
+        nwipc
+            .observe_external_connection(&crash_session)
+            .map_err(|error| error.to_string())?;
+        crash_session = nwipc
+            .replace_renderer(&crash_session)
+            .map_err(|error| error.to_string())?;
+        if crash_session.id() != logical_session || crash_session.generation() == old_generation {
+            return Err("endpoint crash did not replace the generation".into());
+        }
+    }
+    nwipc
+        .close(&crash_session)
+        .map_err(|error| error.to_string())?;
+    let report = "webkit-e2e: initial-load=ok production-transport=ok boundaries=ok backpressure=ok replacement-process=ok hardened-process=ok notification-faults=ok writer-crash=ok peer-kill=ok generation-replacement=ok\n";
+    nwipc_webkit_testkit::WebKitE2eReport::parse(report).map_err(|error| error.to_string())?;
+    print_output(&normal_output);
+    print!("{report}");
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum ScenarioExpectation {
+    Success(&'static str),
+    PeerCrash,
+}
+
+#[cfg(target_os = "macos")]
+fn run_e2e_scenario(
+    artifacts: &E2eArtifacts,
+    work: &Path,
+    timeout: u64,
+    session: &mut nwipc::Session,
+    fault: &str,
+    peer_mode: &str,
+    expectation: ScenarioExpectation,
+) -> Result<Output, String> {
     let mut renderer_bootstrap = Vec::new();
     session
         .write_renderer_bootstrap(&mut renderer_bootstrap)
         .map_err(|error| error.to_string())?;
     let renderer_bootstrap = encode_hex(&renderer_bootstrap);
-    let process_id = std::process::id();
+    let process_id = format!("{}.{}", std::process::id(), session.generation().get());
     let mut peer_command = Command::new(&artifacts.peer_executable);
     peer_command
+        .env("NWIPC_WEBKIT_E2E_PEER_MODE", peer_mode)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -540,6 +646,7 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
             &renderer_bootstrap,
         )
         .env("NWIPC_E2E_TIMEOUT_SECONDS", timeout.to_string())
+        .env("NWIPC_WEBKIT_E2E_FAULT", fault)
         .arg(&artifacts.embedded_bundle)
         .arg(timeout.to_string())
         .output();
@@ -550,18 +657,17 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
             let peer_output = peer
                 .wait_with_output()
                 .map_err(|wait_error| format!("reap native-peer E2E helper: {wait_error}"))?;
-            write_peer_logs(work, &peer_output)?;
+            write_peer_logs(work, fault, &peer_output)?;
             return Err(format!("launch WebKit E2E harness: {error}"));
         }
     };
-    fs::write(work.join("stdout.log"), &output.stdout).map_err(|error| error.to_string())?;
-    fs::write(work.join("stderr.log"), &output.stderr).map_err(|error| error.to_string())?;
-    if !output.status.success() {
+    write_app_logs(work, fault, &output)?;
+    if !output.status.success() && !matches!(expectation, ScenarioExpectation::PeerCrash) {
         let _ = peer.kill();
         let peer_output = peer
             .wait_with_output()
             .map_err(|error| format!("reap native-peer E2E helper: {error}"))?;
-        write_peer_logs(work, &peer_output)?;
+        write_peer_logs(work, fault, &peer_output)?;
         return Err(format!(
             "WebKit E2E harness failed with {}; logs: {}",
             output.status,
@@ -571,27 +677,69 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
     let peer_output = peer
         .wait_with_output()
         .map_err(|error| format!("wait native-peer E2E helper: {error}"))?;
-    write_peer_logs(work, &peer_output)?;
-    if !peer_output.status.success()
-        || !String::from_utf8_lossy(&peer_output.stdout).contains("production-transport=ok")
-    {
-        return Err(format!(
-            "native-peer E2E helper failed with {}; logs: {}",
-            peer_output.status,
-            work.display()
-        ));
+    write_peer_logs(work, fault, &peer_output)?;
+    validate_e2e_scenario(fault, work, &output, &peer_output, expectation)?;
+    Ok(output)
+}
+
+#[cfg(target_os = "macos")]
+fn validate_e2e_scenario(
+    fault: &str,
+    work: &Path,
+    output: &Output,
+    peer_output: &Output,
+    expectation: ScenarioExpectation,
+) -> Result<(), String> {
+    match expectation {
+        ScenarioExpectation::Success(marker) => {
+            if !output.status.success()
+                || !peer_output.status.success()
+                || !String::from_utf8_lossy(&peer_output.stdout).contains(marker)
+            {
+                return Err(format!(
+                    "WebKit E2E scenario {fault} failed app={} peer={}; logs: {}",
+                    output.status,
+                    peer_output.status,
+                    work.display()
+                ));
+            }
+        }
+        ScenarioExpectation::PeerCrash => {
+            if output.status.success()
+                || peer_output.status.success()
+                || !String::from_utf8_lossy(&peer_output.stdout)
+                    .contains("handshake-before-kill=ok")
+            {
+                return Err(format!(
+                    "WebKit E2E peer-kill scenario unexpectedly succeeded; logs: {}",
+                    work.display()
+                ));
+            }
+        }
     }
-    nwipc_webkit_testkit::WebKitE2eReport::parse(&String::from_utf8_lossy(&output.stdout))
-        .map_err(|error| error.to_string())?;
-    nwipc.close(&session).map_err(|error| error.to_string())?;
-    print_output(&output);
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn write_peer_logs(work: &Path, output: &Output) -> Result<(), String> {
-    fs::write(work.join("peer-stdout.log"), &output.stdout).map_err(|error| error.to_string())?;
-    fs::write(work.join("peer-stderr.log"), &output.stderr).map_err(|error| error.to_string())
+fn write_app_logs(work: &Path, scenario: &str, output: &Output) -> Result<(), String> {
+    fs::write(work.join(format!("{scenario}-stdout.log")), &output.stdout)
+        .map_err(|error| error.to_string())?;
+    fs::write(work.join(format!("{scenario}-stderr.log")), &output.stderr)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn write_peer_logs(work: &Path, scenario: &str, output: &Output) -> Result<(), String> {
+    fs::write(
+        work.join(format!("{scenario}-peer-stdout.log")),
+        &output.stdout,
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(
+        work.join(format!("{scenario}-peer-stderr.log")),
+        &output.stderr,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn encode_hex(bytes: &[u8]) -> String {

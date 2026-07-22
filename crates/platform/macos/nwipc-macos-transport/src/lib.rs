@@ -21,6 +21,7 @@ use nwipc_protocol::{
 use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent as RendererEvent};
 use nwipc_renderer_bootstrap::RendererTransportFactory;
 use nwipc_signal_api::SignalDirection;
+use nwipc_signal_api::SignalSender;
 use nwipc_signal_darwin::{DarwinListener, DarwinSender, DarwinSignal, DarwinSignalDescriptor};
 use nwipc_signal_poll::PollConfig;
 use nwipc_types::{Generation, SessionId};
@@ -186,7 +187,54 @@ impl PreparedMacosTransport {
     }
 }
 
-type MacosChannel = ChannelTransport<DarwinSender, DarwinListener>;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum SignalPostBehavior {
+    #[default]
+    Immediate,
+    #[cfg(feature = "fault-injection")]
+    Dropped,
+    #[cfg(feature = "fault-injection")]
+    Duplicate,
+    #[cfg(feature = "fault-injection")]
+    Delayed,
+}
+
+#[derive(Clone, Debug)]
+struct E2eDarwinSender {
+    inner: DarwinSender,
+    behavior: SignalPostBehavior,
+}
+
+impl SignalSender for E2eDarwinSender {
+    fn notify(&self) -> Result<(), ErrorReport> {
+        match self.behavior {
+            SignalPostBehavior::Immediate => self.inner.notify(),
+            #[cfg(feature = "fault-injection")]
+            SignalPostBehavior::Dropped => Ok(()),
+            #[cfg(feature = "fault-injection")]
+            SignalPostBehavior::Duplicate => {
+                self.inner.notify()?;
+                self.inner.notify()
+            }
+            #[cfg(feature = "fault-injection")]
+            SignalPostBehavior::Delayed => {
+                let sender = self.inner.clone();
+                std::thread::Builder::new()
+                    .name("nwipc-delayed-notification".into())
+                    .spawn(move || {
+                        std::thread::sleep(Duration::from_millis(250));
+                        let _ = sender.notify();
+                    })
+                    .map(|_| ())
+                    .map_err(|_| {
+                        platform_error(ErrorCode::Internal, "schedule delayed notification")
+                    })
+            }
+        }
+    }
+}
+
+type MacosChannel = ChannelTransport<E2eDarwinSender, DarwinListener>;
 
 /// Raw complete-frame transport attached from a validated bootstrap envelope.
 pub struct MacosEndpointTransport {
@@ -203,6 +251,14 @@ impl MacosEndpointTransport {
     ///
     /// Rejects mismatched provider tags, malformed bundles, stale resources, and invalid layouts.
     pub fn attach(envelope: &BootstrapEnvelope, role: EndpointRole) -> Result<Self, ErrorReport> {
+        Self::attach_with_signal_behavior(envelope, role, SignalPostBehavior::Immediate)
+    }
+
+    fn attach_with_signal_behavior(
+        envelope: &BootstrapEnvelope,
+        role: EndpointRole,
+        signal_behavior: SignalPostBehavior,
+    ) -> Result<Self, ErrorReport> {
         if envelope.role() != role
             || envelope.memory().provider() != ProviderKind::IoSurface
             || !matches!(
@@ -252,9 +308,15 @@ impl MacosEndpointTransport {
         };
         let channel = ChannelTransport::new(
             endpoint,
-            signal.sender(outbound_signal, generation)?,
+            E2eDarwinSender {
+                inner: signal.sender(outbound_signal, generation)?,
+                behavior: signal_behavior,
+            },
             signal.listener(outbound_signal, generation)?,
-            signal.sender(inbound_signal, generation)?,
+            E2eDarwinSender {
+                inner: signal.sender(inbound_signal, generation)?,
+                behavior: SignalPostBehavior::Immediate,
+            },
             signal.listener(inbound_signal, generation)?,
             PollConfig::default(),
         )?;
@@ -332,11 +394,63 @@ pub struct MacosRendererTransport {
     raw: MacosEndpointTransport,
     maximum_message: usize,
     closed: bool,
+    #[cfg(feature = "fault-injection")]
+    crash_point: WriterCrashPoint,
 }
 
 /// Stateless runtime adapter for the production renderer endpoint contract.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MacosRendererTransportFactory;
+pub struct MacosRendererTransportFactory {
+    #[cfg(feature = "fault-injection")]
+    faults: FaultInjection,
+}
+
+/// Darwin-notification transformations used by the signed process fault matrix.
+#[cfg(feature = "fault-injection")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NotificationFault {
+    /// Post notifications normally.
+    #[default]
+    None,
+    /// Suppress every renderer-to-peer notification.
+    Dropped,
+    /// Post every renderer-to-peer notification twice.
+    Duplicate,
+    /// Post every renderer-to-peer notification after the correctness-poll interval.
+    Delayed,
+}
+
+/// Writer process termination point used by the signed process crash matrix.
+#[cfg(feature = "fault-injection")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WriterCrashPoint {
+    /// Do not terminate the writer.
+    #[default]
+    None,
+    /// Terminate after bytes are written but before cursor publication.
+    BeforeCommit,
+    /// Terminate after cursor publication but before notification.
+    AfterCommit,
+}
+
+/// Test-only production transport fault selection.
+#[cfg(feature = "fault-injection")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FaultInjection {
+    /// Notification transformation applied to renderer-to-peer hints.
+    pub notification: NotificationFault,
+    /// Writer termination point applied to the first application send.
+    pub writer_crash: WriterCrashPoint,
+}
+
+#[cfg(feature = "fault-injection")]
+impl MacosRendererTransportFactory {
+    /// Creates a factory for the signed process fault matrix.
+    #[doc(hidden)]
+    pub const fn with_fault_injection(faults: FaultInjection) -> Self {
+        Self { faults }
+    }
+}
 
 impl RendererTransportFactory for MacosRendererTransportFactory {
     type Transport = MacosRendererTransport;
@@ -348,13 +462,14 @@ impl RendererTransportFactory for MacosRendererTransportFactory {
         generation: Generation,
         protocol: u16,
     ) -> Result<Self::Transport, ErrorReport> {
-        MacosRendererTransport::attach(
+        MacosRendererTransport::attach_with_factory_faults(
             envelope,
             RendererExpectation {
                 session_id,
                 generation,
                 protocol,
             },
+            *self,
         )
     }
 }
@@ -369,13 +484,41 @@ impl MacosRendererTransport {
         envelope: BootstrapEnvelope,
         expectation: RendererExpectation,
     ) -> Result<Self, ErrorReport> {
+        Self::attach_with_factory_faults(
+            envelope,
+            expectation,
+            MacosRendererTransportFactory::default(),
+        )
+    }
+
+    fn attach_with_factory_faults(
+        envelope: BootstrapEnvelope,
+        expectation: RendererExpectation,
+        factory: MacosRendererTransportFactory,
+    ) -> Result<Self, ErrorReport> {
         envelope.validate_for(
             EndpointRole::Renderer,
             expectation.session_id,
             expectation.generation,
             expectation.protocol,
         )?;
-        let mut raw = MacosEndpointTransport::attach(&envelope, EndpointRole::Renderer)?;
+        #[cfg(feature = "fault-injection")]
+        let signal_behavior = match factory.faults.notification {
+            NotificationFault::None => SignalPostBehavior::Immediate,
+            NotificationFault::Dropped => SignalPostBehavior::Dropped,
+            NotificationFault::Duplicate => SignalPostBehavior::Duplicate,
+            NotificationFault::Delayed => SignalPostBehavior::Delayed,
+        };
+        #[cfg(not(feature = "fault-injection"))]
+        let signal_behavior = {
+            let _ = factory;
+            SignalPostBehavior::Immediate
+        };
+        let mut raw = MacosEndpointTransport::attach_with_signal_behavior(
+            &envelope,
+            EndpointRole::Renderer,
+            signal_behavior,
+        )?;
         let major = u8::try_from(expectation.protocol).map_err(|_| {
             platform_error(
                 ErrorCode::LayoutVersionMismatch,
@@ -414,6 +557,8 @@ impl MacosRendererTransport {
                 platform_error(ErrorCode::InvalidRange, "renderer negotiated message limit")
             })?,
             closed: false,
+            #[cfg(feature = "fault-injection")]
+            crash_point: factory.faults.writer_crash,
         })
     }
 }
@@ -429,6 +574,18 @@ impl RendererTransport for MacosRendererTransport {
         let mut frame = Vec::with_capacity(payload.len() + 1);
         frame.push(0);
         frame.extend_from_slice(payload);
+        #[cfg(feature = "fault-injection")]
+        match std::mem::replace(&mut self.crash_point, WriterCrashPoint::None) {
+            WriterCrashPoint::BeforeCommit => {
+                self.raw.channel.prepare_uncommitted_for_crash(&frame)?;
+                std::process::abort();
+            }
+            WriterCrashPoint::AfterCommit => {
+                self.raw.channel.send_without_notification(&frame)?;
+                std::process::abort();
+            }
+            WriterCrashPoint::None => {}
+        }
         self.raw.send_frame(&frame).map(|sent| {
             if sent.buffered_amount >= self.raw.high_watermark {
                 SendDisposition::Backpressured

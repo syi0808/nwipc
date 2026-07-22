@@ -24,10 +24,10 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 | bootstrap partial read / early EOF / invalid length / timeout | `nwipc-peer-bootstrap` tests, bootstrap fuzz | typed `Truncated`/`InvalidRange`/`Timeout`, endpoint replacement |
 | record header/payload before commit에서 writer 종료 | ring writer crash-injection test | producer cursor 불변, reader에 bytes 비노출 |
 | after commit에서 writer 종료 | concurrent/stress ring tests | commit된 complete record만 FIFO 전달 |
-| signal dropped / duplicated / coalesced / delayed | channel and signal contract tests | cursor drain으로 progress, 중복 delivery 없음 |
+| signal dropped / duplicated / coalesced / delayed | channel/signal contract tests와 signed `webkit-e2e` | cursor drain으로 progress, 중복 delivery 없음 |
 | malformed record length/kind/flags/cursor | record/ring tests and fuzz | panic/OOB 없이 typed protocol error |
 | stale generation/document | peer, renderer, WebKit contract tests | attach/delivery 거부와 generation 교체 |
-| peer exit / repeated close / replacement | native process tests | bounded cleanup, child reap, 새 session만 사용 |
+| peer/WebContent exit, commit 전후 writer exit, repeated close / replacement | native process tests와 signed `webkit-e2e` | partial bytes 비노출, committed bytes 전달, bounded cleanup, child reap, 새 generation만 사용 |
 | SPI/bundle/signing/IOSurface failure | provider tests and `webkit-e2e` | silent fallback 없이 fail closed |
 
 ## 알려진 제한
@@ -35,7 +35,7 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 - Data-plane fragmentation은 production WebKit handshake와 signed boundary matrix에 연결됐다.
 - Record inline payload 상한은 1 MiB이고 논리 메시지 상한은 채널 생성 시 ring 범위 안에서 설정한다.
 - Encryption/authentication, async API, reconnect policy는 아직 없다.
-- Production WebKit notification/crash fault matrix와 origin별 binding policy는 아직 없다.
+- Production WebKit origin별 binding policy는 아직 없다.
 - Developer ID notarization/stapling과 macOS minor-release/x86_64 matrix는 아직 없다.
 - Benchmark 수치는 machine-specific baseline이며 회귀 임계값으로 사용하기 전에 같은 runner에서
   반복 측정해야 한다.

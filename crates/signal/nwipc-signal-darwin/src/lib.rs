@@ -169,7 +169,7 @@ impl DarwinSignal {
 }
 
 /// Darwin notification sender.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DarwinSender {
     name: CString,
 }

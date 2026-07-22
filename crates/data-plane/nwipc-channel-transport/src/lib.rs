@@ -204,6 +204,23 @@ where
         Ok(sent)
     }
 
+    /// Writes an inline record without cursor publication for a process-crash harness.
+    #[cfg(feature = "fault-injection")]
+    #[doc(hidden)]
+    pub fn prepare_uncommitted_for_crash(&mut self, payload: &[u8]) -> Result<(), ErrorReport> {
+        self.channel.prepare_uncommitted_for_crash(payload)
+    }
+
+    /// Publishes a complete message without posting its notification hint.
+    #[cfg(feature = "fault-injection")]
+    #[doc(hidden)]
+    pub fn send_without_notification(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<ChannelSend, ErrorReport> {
+        self.channel.send(payload)
+    }
+
     /// Sends a FIFO close marker and notifies the remote consumer.
     ///
     /// # Errors

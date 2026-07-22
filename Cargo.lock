@@ -260,6 +260,7 @@ version = "0.0.0"
 dependencies = [
  "nwipc",
  "nwipc-peer",
+ "nwipc-peer-core",
  "nwipc-process-testkit",
  "nwipc-renderer-api",
  "nwipc-types",
