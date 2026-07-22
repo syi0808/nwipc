@@ -79,6 +79,11 @@ impl FakeSignal {
     pub fn try_wait(&mut self) -> bool {
         self.pending.pop_front().is_some()
     }
+
+    /// Returns the number of retained hints for fault-injection assertions.
+    pub fn pending(&self) -> usize {
+        self.pending.len()
+    }
 }
 
 #[cfg(test)]

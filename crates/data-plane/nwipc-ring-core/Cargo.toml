@@ -12,6 +12,8 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-error.workspace = true
+nwipc-layout.workspace = true
+nwipc-record.workspace = true
 
 [lints]
 workspace = true

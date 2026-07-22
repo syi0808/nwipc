@@ -1,5 +1,9 @@
 # Data-plane 모듈 구현계획
 
+> 구현 상태: Phase 2의 in-process provider, atomic publication, ring reader/writer, flow control,
+> bidirectional channel과 signal fault-injection 검증을 완료했다. OS-backed mapping과 실제 signal
+> provider 연결은 후속 phase에서 같은 cursor/channel contract를 사용한다.
+
 ## 범위
 
 대상은 `nwipc-atomic`, `nwipc-ring-core`, `nwipc-ring-writer`, `nwipc-ring-reader`, `nwipc-flow-control`, `nwipc-channel-core`다. In-process fake provider로 먼저 완성한다.
@@ -103,4 +107,3 @@ Fragmentation, chunk pool, authentication/encryption, borrowed receive는 첫 sl
 - WebView/OS provider 없이 양방향 echo가 동작한다.
 - FIFO, bounded capacity, no-overwrite, crash-safe publication invariant를 자동 검증한다.
 - Signal 유실이 correctness를 깨지 않는다.
-

@@ -94,8 +94,8 @@ P0:
 P1:
 
 - [ ] Layout/record/validation/handshake
-- [ ] Atomic/ring/flow/channel
-- [ ] Property/fuzz/concurrency test와 in-process echo
+- [x] Atomic/ring/flow/channel
+- [x] Data-plane boundary/concurrency test와 in-process echo
 
 P2:
 

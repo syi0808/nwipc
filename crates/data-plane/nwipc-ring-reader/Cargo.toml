@@ -11,7 +11,14 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-atomic.workspace = true
 nwipc-error.workspace = true
+nwipc-record.workspace = true
+nwipc-ring-core.workspace = true
+nwipc-types.workspace = true
+
+[dev-dependencies]
+nwipc-ring-writer.workspace = true
 
 [lints]
 workspace = true

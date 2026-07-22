@@ -12,6 +12,7 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-error.workspace = true
+nwipc-layout.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

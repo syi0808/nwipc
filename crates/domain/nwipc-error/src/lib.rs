@@ -67,6 +67,12 @@ pub enum ErrorCode {
     StaleGeneration = 14,
     /// A required record flag is unknown.
     UnknownRequiredFlag = 15,
+    /// A message exceeds the configured inline limit.
+    MessageTooLarge = 16,
+    /// A bounded buffer cannot currently accept the operation.
+    Backpressured = 17,
+    /// Shared state contains an impossible cursor distance.
+    InvalidCursor = 18,
 }
 
 /// Whether retrying or replacing the endpoint can recover an operation.
@@ -269,6 +275,9 @@ const _: () = {
     assert!(ErrorCode::Truncated as u16 != ErrorCode::InvalidRange as u16);
     assert!(ErrorCode::InvalidMagic as u16 != ErrorCode::LayoutVersionMismatch as u16);
     assert!(ErrorCode::ByteOrderMismatch as u16 != ErrorCode::StaleGeneration as u16);
+    assert!(ErrorCode::UnknownRequiredFlag as u16 != ErrorCode::MessageTooLarge as u16);
+    assert!(ErrorCode::MessageTooLarge as u16 != ErrorCode::Backpressured as u16);
+    assert!(ErrorCode::Backpressured as u16 != ErrorCode::InvalidCursor as u16);
 };
 
 #[cfg(test)]
