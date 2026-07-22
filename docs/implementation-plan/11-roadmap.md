@@ -162,9 +162,15 @@ P4:
 
 ### M0 — Baseline 안정화
 
-- 완료된 fragmentation을 포함한 현재 workspace를 format/clippy/test/fuzz가 통과하는 baseline으로 고정
-- JSC lifecycle test의 반복 실행 안정성 확보
-- Roadmap 상태와 committed code/CI 결과 동기화
+- [x] 완료된 fragmentation을 포함한 현재 workspace를 format/clippy/test/fuzz가 통과하는 baseline으로 고정
+- [x] JSC lifecycle test의 반복 실행 안정성 확보
+- [x] Roadmap 상태와 committed code/CI gate 동기화
+
+고정된 검증 경로는 `.github/workflows/ci.yml`의 Rust/TypeScript/architecture gate와 macOS JSC lifecycle
+25회 반복, `.github/workflows/hardening.yml`의 Miri/ASan/record·bootstrap·layout·fragment fuzz smoke다.
+Hardening은 PR, `main` push, 주간 schedule에서 같은 범위를 실행한다. JSC test는 process-wide 직렬화 후
+64번의 document/context 생성·연결·close·teardown을 검증해 병렬 test runner와 context 재사용의 영향을
+분리한다.
 
 완료: Core/TypeScript/hardening CI가 clean worktree에서 반복 가능하게 통과하고 flaky failure가 없다.
 

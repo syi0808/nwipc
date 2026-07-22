@@ -29,6 +29,19 @@ jobs:
       - run: rustup show active-toolchain
       - run: cargo xtask hardening-check
 
+  jsc-lifecycle:
+    name: JSC lifecycle stability
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - name: Repeat document lifecycle suite
+        run: |
+          for run in {1..25}; do
+            echo "JSC lifecycle run ${run}/25"
+            cargo test -p nwipc-renderer-jsc platform::tests:: -- --test-threads=1
+          done
+
   ts-client:
     runs-on: ubuntu-latest
     steps:

@@ -792,6 +792,7 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use std::collections::VecDeque;
+        use std::sync::{Mutex, MutexGuard};
 
         use nwipc_error::ErrorReport;
         use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent};
@@ -804,6 +805,14 @@ mod platform {
             fn JSGlobalContextCreate(class: *const c_void) -> JSContextRef;
             fn JSGlobalContextRelease(context: JSContextRef);
             fn JSValueToBoolean(context: JSContextRef, value: JSValueRef) -> bool;
+        }
+
+        static JSC_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+        fn serial_test_guard() -> MutexGuard<'static, ()> {
+            JSC_TEST_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
         }
 
         #[derive(Default)]
@@ -852,6 +861,7 @@ mod platform {
 
         #[test]
         fn installs_frozen_binding_and_copies_uint8_arrays() {
+            let _guard = serial_test_guard();
             let context = Context::new();
             let raw = unsafe { JscContext::from_raw(context.0) };
             let mut binding = JscBinding::install(raw, DocumentGeneration::new(1).unwrap(), || {
@@ -869,6 +879,7 @@ mod platform {
 
         #[test]
         fn teardown_blocks_stale_callbacks_and_releases_handlers() {
+            let _guard = serial_test_guard();
             let context = Context::new();
             let raw = unsafe { JscContext::from_raw(context.0) };
             let mut binding = JscBinding::install(raw, DocumentGeneration::new(2).unwrap(), || {
@@ -887,21 +898,26 @@ mod platform {
         }
 
         #[test]
-        fn repeated_connect_and_close_releases_protected_objects() {
-            let context = Context::new();
-            let raw = unsafe { JscContext::from_raw(context.0) };
-            let mut binding = JscBinding::install(raw, DocumentGeneration::new(3).unwrap(), || {
-                Ok(Box::<Loopback>::default() as Box<dyn RendererTransport>)
-            })
-            .unwrap();
-            assert!(context.evaluate_bool(
-                "for(let i=0;i<64;i++){const q=__nwipc.connect();q.setHandler({close(){}});q.close()} true"
-            ));
-            binding.dispatch().unwrap();
-            let state = state(context.0).unwrap();
-            assert!(state.borrow().handlers.is_empty());
-            assert!(state.borrow().ports.is_empty());
-            binding.teardown().unwrap();
+        fn repeated_document_lifecycle_releases_protected_objects() {
+            let _guard = serial_test_guard();
+            for generation in 3..67 {
+                let context = Context::new();
+                let raw = unsafe { JscContext::from_raw(context.0) };
+                let mut binding =
+                    JscBinding::install(raw, DocumentGeneration::new(generation).unwrap(), || {
+                        Ok(Box::<Loopback>::default() as Box<dyn RendererTransport>)
+                    })
+                    .unwrap();
+                assert!(context.evaluate_bool(
+                    "for(let i=0;i<16;i++){const q=__nwipc.connect();q.setHandler({close(){}});q.close()} true"
+                ));
+                binding.dispatch().unwrap();
+                let binding_state = state(context.0).unwrap();
+                assert!(binding_state.borrow().handlers.is_empty());
+                assert!(binding_state.borrow().ports.is_empty());
+                binding.teardown().unwrap();
+                assert!(state(context.0).is_err());
+            }
         }
     }
 }
