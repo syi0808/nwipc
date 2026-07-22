@@ -19,7 +19,23 @@ macos-iosurface = []
 poll-safety = []
 
 [dependencies]
+nwipc-bootstrap-schema.workspace = true
+nwipc-capabilities.workspace = true
+nwipc-diagnostics = { path = "../../observability/nwipc-diagnostics" }
 nwipc-error.workspace = true
+nwipc-macos-transport.workspace = true
+nwipc-metrics = { path = "../../observability/nwipc-metrics" }
+nwipc-peer-bootstrap.workspace = true
+nwipc-renderer-api.workspace = true
+nwipc-renderer-bootstrap.workspace = true
+nwipc-runtime = { path = "../../runtime/nwipc-runtime" }
+nwipc-session.workspace = true
+nwipc-session-machine.workspace = true
+nwipc-state.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+nwipc-peer-core.workspace = true

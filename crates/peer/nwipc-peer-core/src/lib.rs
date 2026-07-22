@@ -89,6 +89,75 @@ pub struct NativePort<T> {
 }
 
 impl<T: PortTransport> NativePort<T> {
+    /// Accepts a renderer HELLO over an already attached production transport.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale bootstrap identity, malformed authentication, or transport failure.
+    pub fn accept(
+        envelope: BootstrapEnvelope,
+        expectation: PeerExpectation,
+        mut transport: T,
+        maximum_message: usize,
+        capabilities: TransportCapabilities,
+    ) -> Result<Self, ErrorReport> {
+        envelope.validate_for(
+            EndpointRole::Peer,
+            expectation.session_id,
+            expectation.generation,
+            expectation.protocol,
+        )?;
+        let maximum_message = u32::try_from(maximum_message).map_err(|_| {
+            peer_error(
+                ErrorCode::InvalidRange,
+                Recoverability::ReplaceEndpoint,
+                "peer message limit",
+            )
+        })?;
+        if maximum_message == 0 {
+            return Err(peer_error(
+                ErrorCode::InvalidRange,
+                Recoverability::ReplaceEndpoint,
+                "peer message limit",
+            ));
+        }
+        let mut handshake = AcceptorHandshake::new(AcceptorConfig {
+            identity: HandshakeIdentity {
+                session_id: expectation.session_id,
+                generation: expectation.generation,
+                role: ProtocolEndpointRole::Peer,
+            },
+            remote_role: ProtocolEndpointRole::Renderer,
+            versions: VersionRange::exact(protocol_version(expectation.protocol)?),
+            supported: nwipc_capabilities::SupportedCapabilities::new(capabilities),
+            maximum_message,
+            proof: envelope.secret().expose().to_vec(),
+        })?;
+        let hello = transport.receive()?.ok_or_else(|| {
+            peer_error(
+                ErrorCode::Timeout,
+                Recoverability::ReplaceEndpoint,
+                "peer renderer hello",
+            )
+        })?;
+        let (acknowledgement, negotiated) = handshake.accept(&hello)?;
+        transport.send(&acknowledgement)?;
+        drop(envelope);
+        Ok(Self {
+            transport,
+            state: PortState::Open,
+            identity: expectation,
+            maximum_message: usize::try_from(negotiated.maximum_message).map_err(|_| {
+                peer_error(
+                    ErrorCode::InvalidRange,
+                    Recoverability::ReplaceEndpoint,
+                    "peer negotiated message limit",
+                )
+            })?,
+            capabilities: negotiated.capabilities.capabilities(),
+        })
+    }
+
     /// Validates bootstrap resources and completes HELLO/ACK before opening the port.
     ///
     /// # Errors
@@ -233,7 +302,7 @@ impl<T: PortTransport> NativePort<T> {
         self.identity
     }
 
-    /// Capabilities guaranteed by the Phase 3 process-test transport.
+    /// Capabilities negotiated for this endpoint.
     pub const fn capabilities(&self) -> TransportCapabilities {
         self.capabilities
     }

@@ -10,8 +10,5 @@ layer = "observability"
 stability = "experimental"
 owner = "nwipc"
 
-[dependencies]
-nwipc-error.workspace = true
-
 [lints]
 workspace = true

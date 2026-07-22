@@ -15,6 +15,7 @@ nwipc-bootstrap-schema.workspace = true
 nwipc-capabilities.workspace = true
 nwipc-error.workspace = true
 nwipc-protocol.workspace = true
+nwipc-renderer-api.workspace = true
 nwipc-types.workspace = true
 
 [lints]

@@ -15,7 +15,9 @@ nwipc-types.workspace = true
 nwipc-webkit-testkit.workspace = true
 
 [dev-dependencies]
+nwipc = { path = "../../crates/facade/nwipc" }
 nwipc-process-testkit = { path = "../../crates/testing/nwipc-process-testkit" }
+nwipc-renderer-api.workspace = true
 
 [lints]
 workspace = true

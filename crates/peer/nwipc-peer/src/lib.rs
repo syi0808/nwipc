@@ -3,12 +3,14 @@
 use std::env;
 use std::io::{self, Read, Write};
 
+use nwipc_bootstrap_schema::ProviderKind;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
+use nwipc_macos_transport::{MacosEndpointTransport, production_capabilities};
 use nwipc_peer_bootstrap::consume;
 use nwipc_peer_core::{NativePort, PeerExpectation, PortEvent, PortState, PortTransport};
 use nwipc_types::{Generation, SessionId};
 
-/// Default maximum inline application message for the process harness.
+/// Default maximum logical application message.
 pub const DEFAULT_MAXIMUM_MESSAGE: usize = 1024 * 1024;
 const SESSION_ENV: &str = "NWIPC_SESSION_ID";
 const GENERATION_ENV: &str = "NWIPC_GENERATION";
@@ -20,7 +22,7 @@ pub struct Peer {
 }
 
 impl Peer {
-    /// Consumes bootstrap from standard input and opens the inherited process-test transport.
+    /// Consumes bootstrap from standard input and attaches the production memory/signal transport.
     ///
     /// The parent must set `NWIPC_SESSION_ID`, `NWIPC_GENERATION`, and `NWIPC_PROTOCOL`. Bootstrap
     /// validation occurs before HELLO or any provider activity.
@@ -30,7 +32,32 @@ impl Peer {
     /// Returns a redacted configuration, bootstrap, or handshake error.
     pub fn initialize() -> Result<Self, ErrorReport> {
         let expectation = expectation_from_env()?;
-        Self::from_streams(io::stdin(), io::stdout(), expectation)
+        let mut reader = io::stdin();
+        let envelope = consume(&mut reader)?;
+        if envelope.memory().provider() == ProviderKind::ProcessTest
+            && envelope.signal().provider() == ProviderKind::ProcessTest
+        {
+            let transport: Box<dyn PortTransport> = Box::new(StreamTransport {
+                reader,
+                writer: io::stdout(),
+                closed: false,
+            });
+            let port =
+                NativePort::attach(envelope, expectation, transport, DEFAULT_MAXIMUM_MESSAGE)?;
+            return Ok(Self { port });
+        }
+        let transport: Box<dyn PortTransport> = Box::new(MacosEndpointTransport::attach(
+            &envelope,
+            nwipc_bootstrap_schema::EndpointRole::Peer,
+        )?);
+        let port = NativePort::accept(
+            envelope,
+            expectation,
+            transport,
+            DEFAULT_MAXIMUM_MESSAGE,
+            production_capabilities(),
+        )?;
+        Ok(Self { port })
     }
 
     /// Opens a peer over owned framed streams. Intended for process adapters and tests.

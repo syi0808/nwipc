@@ -236,6 +236,15 @@ impl ChannelEndpoint {
         self.flow.update(self.writer.buffered_amount()?)
     }
 
+    /// Returns committed outbound bytes not yet consumed by the remote endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidCursor` if shared cursor state is corrupt.
+    pub fn buffered_amount(&self) -> Result<u32, ErrorReport> {
+        self.writer.buffered_amount()
+    }
+
     /// Returns whether either side has closed this endpoint.
     pub const fn is_closed(&self) -> bool {
         self.local_closed || self.remote_closed

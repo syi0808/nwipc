@@ -10,6 +10,11 @@ single-message reassembly. The WebKit slice provides a fail-closed SPI probe, in
 panic boundaries, strict renderer bootstrap attachment, generation replacement, and deterministic
 bundle assembly/inspection. Unsupported OS/build combinations are reported explicitly.
 
+The `nwipc` facade now owns production configuration, generation-scoped session resources,
+peer bootstrap, renderer transport creation, close, and redacted diagnostics. Its macOS path attaches
+the same IOSurface/Darwin channel in both public endpoints; inherited stdin carries bootstrap only.
+See `examples/native-peer/tests/process.rs` for the complete two-process public API path.
+
 ## Development
 
 ```sh

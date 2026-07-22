@@ -6,7 +6,21 @@ version = 4
 name = "nwipc"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-schema",
+ "nwipc-capabilities",
+ "nwipc-diagnostics",
  "nwipc-error",
+ "nwipc-macos-transport",
+ "nwipc-metrics",
+ "nwipc-peer-bootstrap",
+ "nwipc-peer-core",
+ "nwipc-renderer-api",
+ "nwipc-renderer-bootstrap",
+ "nwipc-runtime",
+ "nwipc-session",
+ "nwipc-session-machine",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -93,7 +107,11 @@ dependencies = [
 name = "nwipc-diagnostics"
 version = "0.0.0"
 dependencies = [
+ "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-metrics",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -191,6 +209,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-macos-transport"
+version = "0.0.0"
+dependencies = [
+ "nwipc-bootstrap-schema",
+ "nwipc-capabilities",
+ "nwipc-channel-core",
+ "nwipc-channel-transport",
+ "nwipc-error",
+ "nwipc-layout",
+ "nwipc-memory-api",
+ "nwipc-memory-iosurface",
+ "nwipc-peer-core",
+ "nwipc-protocol",
+ "nwipc-renderer-api",
+ "nwipc-renderer-bootstrap",
+ "nwipc-signal-api",
+ "nwipc-signal-darwin",
+ "nwipc-signal-poll",
+ "nwipc-types",
+ "nwipc-validation",
+]
+
+[[package]]
 name = "nwipc-memory-api"
 version = "0.0.0"
 dependencies = [
@@ -210,18 +251,17 @@ dependencies = [
 [[package]]
 name = "nwipc-metrics"
 version = "0.0.0"
-dependencies = [
- "nwipc-error",
-]
 
 [[package]]
 name = "nwipc-native-peer-example"
 version = "0.0.0"
 dependencies = [
+ "nwipc",
  "nwipc-memory-api",
  "nwipc-memory-iosurface",
  "nwipc-peer",
  "nwipc-process-testkit",
+ "nwipc-renderer-api",
  "nwipc-types",
  "nwipc-webkit-testkit",
 ]
@@ -230,7 +270,9 @@ dependencies = [
 name = "nwipc-peer"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-schema",
  "nwipc-error",
+ "nwipc-macos-transport",
  "nwipc-peer-bootstrap",
  "nwipc-peer-core",
  "nwipc-types",
@@ -311,6 +353,7 @@ dependencies = [
  "nwipc-capabilities",
  "nwipc-error",
  "nwipc-protocol",
+ "nwipc-renderer-api",
  "nwipc-types",
 ]
 

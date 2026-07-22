@@ -136,7 +136,7 @@ P3:
 P4:
 
 - [x] Reload/kill/generation replacement
-- [ ] Diagnostics/metrics operational snapshot
+- [x] Diagnostics/metrics operational snapshot
 - [x] Signed/hardened build와 threat model/unsafe audit
 - [x] Stress/crash/fuzz와 sanitizer/Miri 자동화
 - [x] Benchmark baseline과 support/failure matrix
@@ -145,15 +145,15 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record, protocol, validation | Provider 통합 | M4 endpoint bootstrap에서 검증된 transport attach 호출 |
-| Ring, flow, channel, fragmentation | Provider 통합 | M4 public renderer/peer endpoint에 production transport 연결 |
-| IOSurface, Darwin, polling/hybrid | Provider 통합 | M4 bootstrap descriptor에서 provider factory 조립 |
-| Bootstrap schema/codec | 단위 완료 | Runtime resource ownership과 실제 provider descriptor 수명 연결 |
-| Peer core/facade | 단위 완료 | Process-test stream 대신 IOSurface/signal transport attach |
-| Session, session machine, runtime | 단위 완료 | M4 resource preparer에 실제 mapping/signal/port adapter 연결 |
-| Renderer core, JSC, WebKit control plane | Provider 통합 | M4 renderer bootstrap에서 production channel 생성 |
+| Domain, layout, record, protocol, validation | Production 통합 | M5 WebKit E2E에서 production endpoint 경로 검증 |
+| Ring, flow, channel, fragmentation | Production 통합 | M5 signed WebKit process에서 같은 public transport 사용 |
+| IOSurface, Darwin, polling/hybrid | Production 통합 | M5 WebKit sandbox/수명 failure matrix 검증 |
+| Bootstrap schema/codec | Production 통합 | M5 renderer plist가 동일 descriptor bundle을 전달 |
+| Peer core/facade | Production 통합 | M5 peer kill/replacement를 public facade로 검증 |
+| Session, session machine, runtime | Production 통합 | M5 reload/WebContent kill generation replacement 검증 |
+| Renderer core, JSC, WebKit control plane | Production 통합 | M5 bundle에서 public renderer factory 호출 |
 | WebKit process smoke | Provider 통합 | Raw echo frame 대신 public renderer↔peer transport 사용 |
-| Diagnostics, metrics, top-level facade | 경계 정의 | Operational snapshot, counter, public configuration/session API |
+| Diagnostics, metrics, top-level facade | Production 통합 | M6 failure/wakeup 세부 counter와 release schema 확정 |
 
 독립 provider와 signed WebKit smoke는 실제 환경 가능성을 검증했지만 전체 product call graph의 완료를
 의미하지 않는다. 다음 milestone은 새로운 provider나 framework 확장보다 production 경로 폐쇄를 우선한다.
@@ -219,16 +219,22 @@ identity/layout/length 검증 후에 ring 범위에 연결된다. Fragmentation�
 
 ### M4 — Public facade와 endpoint 통합
 
-- `nwipc` facade에 configuration, runtime/session, diagnostics 접근 API 구현
-- `nwipc-peer`가 inherited bootstrap에서 실제 memory/signal descriptor를 attach
-- stdin/pipe는 bootstrap에만 사용하고 application payload에서는 제거
-- Renderer transport factory가 bootstrap resource로 같은 production channel 생성
-- Endpoint core는 executor/thread/process를 소유하지 않는 synchronous contract를 유지하고 runtime adapter가
+- [x] `nwipc` facade에 configuration, runtime/session, diagnostics 접근 API 구현
+- [x] `nwipc-peer`가 inherited bootstrap에서 실제 memory/signal descriptor를 attach
+- [x] stdin/pipe는 bootstrap에만 사용하고 application payload에서는 제거
+- [x] Renderer transport factory가 bootstrap resource로 같은 production channel 생성
+- [x] Endpoint core는 executor/thread/process를 소유하지 않는 synchronous contract를 유지하고 runtime adapter가
   wire protocol을 재구현하지 않도록 한다.
 
 완료: Public renderer와 peer API가 provider 세부사항을 노출하지 않고 send/receive/backpressure/close를
 수행하며 top-level facade의 지원 경로에서 placeholder `Unsupported`가 없다. 새로운 runtime adapter는
 endpoint contract와 lifecycle/wakeup bridge만 구현하면 된다.
+
+검증 경로는 `nwipc` facade의 actual-provider renderer↔peer contract test와
+`nwipc-native-peer-example`의 public two-process production echo다. Facade resource preparer가 방향별
+IOSurface와 Darwin descriptor bundle을 generation에 묶고, peer의 inherited stdin은 one-shot bootstrap 뒤
+닫힌다. 이후 HELLO/ACK와 application frame은 모두 `nwipc-channel-transport`를 통과한다. Process-test stream은
+하위 process testkit provider에서만 유지되며 production provider 선택 시 호출되지 않는다.
 
 ### M5 — Production WebKit E2E
 
@@ -293,6 +299,7 @@ Operations:
 | 완료 항목 | Production artifact | Contract/process test | CI job | 지원 조합/제한 |
 |---|---|---|---|---|
 | 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
+| M4 public endpoint integration | `nwipc`, `nwipc-macos-transport`, `nwipc-peer` | `public_facade_connects_renderer_and_peer_without_payload_stream`, `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | Rust workspace test | macOS IOSurface + Darwin/hybrid |
 
 - Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
 - 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.

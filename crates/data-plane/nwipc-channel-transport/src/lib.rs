@@ -238,6 +238,15 @@ where
         Ok(flow.became_writable.then_some(TransportEvent::Writable))
     }
 
+    /// Returns committed bytes which have not yet been consumed by the remote endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Propagates shared cursor validation failures.
+    pub fn buffered_amount(&self) -> Result<u32, ErrorReport> {
+        self.channel.buffered_amount()
+    }
+
     /// Waits for a primary hint or bounded correctness poll, then uses the common drain path.
     ///
     /// # Errors

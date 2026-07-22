@@ -63,6 +63,7 @@ nwipc-state = { version = "=0.0.0", path = "crates/domain/nwipc-state" }
 nwipc-session = { version = "=0.0.0", path = "crates/runtime/nwipc-session" }
 nwipc-session-machine = { version = "=0.0.0", path = "crates/runtime/nwipc-session-machine" }
 nwipc-webkit-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-webkit-testkit" }
+nwipc-macos-transport = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-transport" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

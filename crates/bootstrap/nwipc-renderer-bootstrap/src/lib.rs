@@ -12,6 +12,7 @@ use nwipc_protocol::{
     EndpointRole as ProtocolEndpointRole, HandshakeIdentity, InitiatorConfig, InitiatorHandshake,
     ProtocolVersion, VersionRange,
 };
+use nwipc_renderer_api::RendererTransport;
 use nwipc_types::{Generation, SessionId};
 
 /// Property-list scalar copied out of `WebKit` initialization user data.
@@ -49,6 +50,25 @@ pub trait RendererProviders {
     /// Returns a structured provider attachment failure.
     fn attach_signal(&mut self, descriptor: &OpaqueDescriptor)
     -> Result<Self::Signal, ErrorReport>;
+}
+
+/// Provider-erased factory that turns one validated bootstrap into a production transport.
+pub trait RendererTransportFactory {
+    /// Concrete synchronous endpoint transport.
+    type Transport: RendererTransport;
+
+    /// Attaches resources and completes endpoint protocol negotiation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed provider, validation, or handshake failure.
+    fn create(
+        &mut self,
+        envelope: BootstrapEnvelope,
+        session: SessionId,
+        generation: Generation,
+        protocol: u16,
+    ) -> Result<Self::Transport, ErrorReport>;
 }
 
 /// Fully validated renderer resources. Constructing this value is the JS-open gate.
@@ -111,6 +131,22 @@ impl<Memory, Signal> RendererAttachment<Memory, Signal> {
 pub struct RendererBootstrap;
 
 impl RendererBootstrap {
+    /// Validates identity and delegates only endpoint attachment to a runtime adapter.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale bootstrap data before invoking the factory and propagates factory failures.
+    pub fn open_transport<Factory: RendererTransportFactory>(
+        envelope: BootstrapEnvelope,
+        session: SessionId,
+        generation: Generation,
+        protocol: u16,
+        factory: &mut Factory,
+    ) -> Result<Factory::Transport, ErrorReport> {
+        envelope.validate_for(EndpointRole::Renderer, session, generation, protocol)?;
+        factory.create(envelope, session, generation, protocol)
+    }
+
     /// Decodes a strict property-list dictionary.
     ///
     /// # Errors

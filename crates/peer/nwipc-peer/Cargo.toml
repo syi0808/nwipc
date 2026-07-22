@@ -11,7 +11,9 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-bootstrap-schema.workspace = true
 nwipc-error.workspace = true
+nwipc-macos-transport.workspace = true
 nwipc-peer-bootstrap.workspace = true
 nwipc-peer-core.workspace = true
 nwipc-types.workspace = true
