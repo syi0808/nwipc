@@ -350,6 +350,10 @@ name = "nwipc-runtime"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-session",
+ "nwipc-session-machine",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -357,6 +361,8 @@ name = "nwipc-session"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -364,6 +370,9 @@ name = "nwipc-session-machine"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-session",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]

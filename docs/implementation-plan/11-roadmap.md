@@ -150,7 +150,7 @@ P4:
 | IOSurface, Darwin, polling/hybrid | Provider 통합 | 공통 channel contract를 사용하는 양방향 transport 조립 |
 | Bootstrap schema/codec | 단위 완료 | Runtime resource ownership과 실제 provider descriptor 수명 연결 |
 | Peer core/facade | 단위 완료 | Process-test stream 대신 IOSurface/signal transport attach |
-| Session, session machine, runtime | 경계 정의 | Registry, generation 교체, cleanup side effect, provider selection |
+| Session, session machine, runtime | 단위 완료 | M3 resource preparer에 실제 mapping/signal/port adapter 연결 |
 | Renderer core, JSC, WebKit control plane | Provider 통합 | Renderer bootstrap에서 production channel 생성 |
 | WebKit process smoke | Provider 통합 | Raw echo frame 대신 public renderer↔peer transport 사용 |
 | Diagnostics, metrics, top-level facade | 경계 정의 | Operational snapshot, counter, public configuration/session API |
@@ -189,13 +189,17 @@ target, 공통 peer/renderer handshake contract test와 workspace clippy/test ga
 
 ### M2 — Session과 runtime ownership
 
-- `nwipc-session`에 identity, generation, prepared resource, endpoint 상태와 idempotent cleanup 구현
-- `nwipc-session-machine`에 transition별 resource/lifecycle side effect 구현
-- `nwipc-runtime`에 registry, ID/generation 발급, provider selection, replacement routing 구현
-- Partial attach, endpoint exit, duplicate close, multi-session isolation 검증
+- [x] `nwipc-session`에 identity, generation, prepared resource, endpoint 상태와 idempotent cleanup 구현
+- [x] `nwipc-session-machine`에 transition별 resource/lifecycle side effect 구현
+- [x] `nwipc-runtime`에 registry, ID/generation 발급, provider selection, replacement routing 구현
+- [x] Partial attach, endpoint exit, duplicate close, multi-session isolation 검증
 
 완료: Runtime이 generation의 준비부터 교체/종료까지 control plane을 소유하고 old generation의 mapping,
 signal, port, callback이 다음 generation에서 재사용되지 않는다.
+
+검증 경로는 generation-bound resource의 역순·단일 cleanup, partial attach와 duplicate close lifecycle test,
+endpoint exit 뒤 replacement/stale handle 거부, 실패한 generation 번호의 비재사용, multi-session/runtime drop
+contract test와 workspace format/clippy/test 및 architecture gate다.
 
 ### M3 — Provider-neutral production transport
 

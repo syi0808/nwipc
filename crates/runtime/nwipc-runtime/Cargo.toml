@@ -12,6 +12,10 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-error.workspace = true
+nwipc-session.workspace = true
+nwipc-session-machine.workspace = true
+nwipc-state.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

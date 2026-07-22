@@ -59,6 +59,8 @@ nwipc-macos-bundle-api = { version = "=0.0.0", path = "crates/platform/macos/nwi
 nwipc-macos-host = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-host" }
 nwipc-macos-spi = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-spi" }
 nwipc-state = { version = "=0.0.0", path = "crates/domain/nwipc-state" }
+nwipc-session = { version = "=0.0.0", path = "crates/runtime/nwipc-session" }
+nwipc-session-machine = { version = "=0.0.0", path = "crates/runtime/nwipc-session-machine" }
 nwipc-webkit-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-webkit-testkit" }
 
 [workspace.lints.rust]
