@@ -1,0 +1,17 @@
+[package]
+name = "nwipc-channel-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "data-plane"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc-error.workspace = true
+
+[lints]
+workspace = true

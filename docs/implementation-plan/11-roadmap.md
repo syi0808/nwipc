@@ -86,8 +86,8 @@ TypeScript Client ─────────────┘
 
 P0:
 
-- [ ] Cargo/pnpm workspace, toolchain, lint, deny, license
-- [ ] First-slice skeleton과 architecture check
+- [x] Cargo/pnpm workspace, toolchain, lint, deny, license
+- [x] First-slice skeleton과 architecture check
 - [ ] Domain contract와 layout/record ADR
 - [ ] Protocol fixture와 fake provider
 
@@ -163,4 +163,3 @@ Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface�
 9. JSC/bundle stub
 10. Host/AppKit E2E
 11. Reload/crash/replacement hardening
-

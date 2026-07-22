@@ -1,0 +1,17 @@
+[package]
+name = "nwipc-bootstrap-schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "bootstrap"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc-error.workspace = true
+
+[lints]
+workspace = true

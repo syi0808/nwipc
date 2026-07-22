@@ -1,5 +1,17 @@
 # 스캐폴드·스켈레톤 코드 구축 계획
 
+## 구현 상태
+
+- [x] Root Cargo/pnpm workspace, toolchain, lint, deny, dual license
+- [x] 첫 vertical slice crate와 TypeScript package compile 가능한 skeleton
+- [x] `xtask architecture-check`와 core/TS/security CI
+- [x] Fake mapped region/signal과 protocol/process/WebKit test 위치
+- [x] macOS bundle/plist/entitlement와 artifact command skeleton
+
+플랫폼 provider와 artifact assembly는 해당 vertical-slice 단계 전까지 typed `Unsupported`로
+실패한다. 스캐폴드 완료는 실제 IOSurface, Darwin Notify, JSC 또는 WebKit 동작 완료를 의미하지
+않는다.
+
 ## 1. 목표
 
 장기 모듈 경계를 저장소 구조와 의존성 규칙으로 먼저 고정하고, 첫 vertical slice에 필요한 crate만 compile 가능한 skeleton과 최소 contract까지 만든다. 후순위 crate는 실제 단계가 시작될 때 추가한다.
@@ -143,4 +155,3 @@ Node state-machine test와 browser compatibility type test를 분리한다.
 - Rust core와 TS package CI가 통과한다.
 - 금지 dependency와 허용되지 않은 unsafe를 넣으면 CI가 실패한다.
 - 미구현 기능은 명시적인 `Unsupported`를 반환한다.
-
