@@ -13,7 +13,12 @@ dependencies = [
 name = "nwipc-appkit"
 version = "0.0.0"
 dependencies = [
+ "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-macos-artifact",
+ "nwipc-macos-host",
+ "nwipc-macos-spi",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -73,6 +78,14 @@ name = "nwipc-error"
 version = "0.0.0"
 
 [[package]]
+name = "nwipc-example-macos-appkit"
+version = "0.0.0"
+dependencies = [
+ "nwipc-appkit",
+ "nwipc-macos-spi",
+]
+
+[[package]]
 name = "nwipc-flow-control"
 version = "0.0.0"
 dependencies = [
@@ -98,7 +111,11 @@ dependencies = [
 name = "nwipc-macos-bundle"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-schema",
  "nwipc-error",
+ "nwipc-macos-bundle-api",
+ "nwipc-renderer-bootstrap",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -113,13 +130,20 @@ name = "nwipc-macos-bundle-shim"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-macos-bundle-api",
 ]
 
 [[package]]
 name = "nwipc-macos-host"
 version = "0.0.0"
 dependencies = [
+ "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-macos-artifact",
+ "nwipc-macos-bundle-api",
+ "nwipc-macos-spi",
+ "nwipc-state",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -240,7 +264,9 @@ dependencies = [
 name = "nwipc-renderer-bootstrap"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-schema",
  "nwipc-error",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -393,3 +419,6 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "0.0.0"
+dependencies = [
+ "nwipc-macos-artifact",
+]

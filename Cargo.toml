@@ -16,6 +16,7 @@ members = [
   "crates/observability/*",
   "crates/testing/*",
   "examples/native-peer",
+  "examples/macos-appkit",
   "xtask",
 ]
 
@@ -44,6 +45,14 @@ nwipc-signal-api = { version = "=0.0.0", path = "crates/signal/nwipc-signal-api"
 nwipc-signal-poll = { version = "=0.0.0", path = "crates/signal/nwipc-signal-poll" }
 nwipc-renderer-api = { version = "=0.0.0", path = "crates/renderer/nwipc-renderer-api" }
 nwipc-renderer-core = { version = "=0.0.0", path = "crates/renderer/nwipc-renderer-core" }
+nwipc-renderer-bootstrap = { version = "=0.0.0", path = "crates/bootstrap/nwipc-renderer-bootstrap" }
+nwipc-capabilities = { version = "=0.0.0", path = "crates/domain/nwipc-capabilities" }
+nwipc-macos-artifact = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-artifact" }
+nwipc-macos-bundle = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-bundle" }
+nwipc-macos-bundle-api = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-bundle-api" }
+nwipc-macos-host = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-host" }
+nwipc-macos-spi = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-spi" }
+nwipc-state = { version = "=0.0.0", path = "crates/domain/nwipc-state" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

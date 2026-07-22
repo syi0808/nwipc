@@ -10,8 +10,12 @@ layer = "platform"
 stability = "experimental"
 owner = "nwipc"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 nwipc-error.workspace = true
+nwipc-macos-bundle-api.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

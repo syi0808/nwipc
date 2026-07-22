@@ -1,4 +1,13 @@
 # macOS AppKit example
 
-The reference AppKit/WKWebView application will be added with the macOS vertical slice. The
-artifact location is reserved now so `xtask example-embed` can later own bundle embedding.
+This executable exercises the fail-closed AppKit configuration boundary. The system probe checks
+the running macOS release and required Objective-C methods; an untested or incompatible build is
+reported as unsupported rather than creating a relayed or uninstrumented WebView.
+
+Build and assemble the injected bundle first:
+
+```sh
+cargo build -p nwipc-macos-bundle-shim
+cargo xtask bundle-assemble target/debug/libnwipc_macos_bundle_shim.dylib
+cargo run -p nwipc-example-macos-appkit -- target/NWIPC.bundle
+```

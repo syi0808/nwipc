@@ -4,9 +4,10 @@ NWIPC is an experimental, host-relay-free shared-memory IPC transport for a macO
 `WKWebView` renderer and a native peer process.
 
 The repository includes its protocol wire foundation, in-process SPSC data plane, native
-two-process bootstrap, macOS memory/signal providers, and renderer runtime. The renderer slice
-provides generation-scoped Rust port state, a JavaScriptCore binding, TypeScript clients, and a
-deterministic mock binding without requiring WebKit.
+two-process bootstrap, macOS memory/signal providers, renderer runtime, and the macOS WebKit
+control plane. The WebKit slice provides a fail-closed SPI probe, injected-bundle lifecycle and
+panic boundaries, strict renderer bootstrap attachment, generation replacement, and deterministic
+bundle assembly/inspection. Unsupported OS/build combinations are reported explicitly.
 
 ## Development
 

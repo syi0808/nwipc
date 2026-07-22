@@ -19,9 +19,7 @@ fn main() -> ExitCode {
         Some("architecture-check") => architecture_check(),
         Some("bundle-manifest") => bundle_manifest(arguments.next()),
         Some("bundle-inspect") => bundle_inspect(arguments.next()),
-        Some("bundle-assemble" | "example-embed") => Err(
-            "Unsupported: macOS artifact assembly starts after a bundle binary exists".into(),
-        ),
+        Some("bundle-assemble" | "example-embed") => bundle_assemble(arguments.next()),
         _ => Err(
             "usage: cargo xtask <architecture-check|bundle-manifest|bundle-inspect|bundle-assemble|example-embed> [path]"
                 .into(),
@@ -123,35 +121,61 @@ fn architecture_check() -> Result<(), String> {
 }
 
 fn bundle_manifest(output: Option<String>) -> Result<(), String> {
-    let output = output.unwrap_or_else(|| "target/nwipc-bundle-manifest.json".into());
+    let output = output.unwrap_or_else(|| "target/nwipc-bundle-manifest.txt".into());
     let output = PathBuf::from(output);
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let manifest = concat!(
-        "{\n",
-        "  \"schema\": 1,\n",
-        "  \"bundleVersion\": \"0.0.0\",\n",
-        "  \"layoutVersion\": 0,\n",
-        "  \"protocolVersion\": 0,\n",
-        "  \"status\": \"scaffold\"\n",
-        "}\n"
-    );
-    fs::write(&output, manifest).map_err(|error| error.to_string())?;
+    fs::write(&output, nwipc_macos_artifact::current_manifest())
+        .map_err(|error| error.to_string())?;
     println!("wrote {}", output.display());
     Ok(())
 }
 
 fn bundle_inspect(path: Option<String>) -> Result<(), String> {
     let path = PathBuf::from(path.ok_or("bundle-inspect requires a bundle path")?);
-    let plist = path.join("Contents/Info.plist");
-    if !plist.is_file() {
-        return Err(format!(
-            "Unsupported bundle layout: {} is missing",
-            plist.display()
-        ));
+    nwipc_macos_artifact::MacosArtifact::inspect(&path).map_err(|error| error.to_string())?;
+    println!("bundle valid: {}", path.display());
+    Ok(())
+}
+
+fn bundle_assemble(binary: Option<String>) -> Result<(), String> {
+    let binary = PathBuf::from(binary.ok_or("bundle-assemble requires a bundle binary")?);
+    if !binary.is_file() {
+        return Err(format!("bundle binary is missing: {}", binary.display()));
     }
-    println!("bundle scaffold: {}", path.display());
+    let root = workspace_root()?;
+    let bundle = root.join("target/NWIPC.bundle");
+    let contents = bundle.join("Contents");
+    let executable = contents
+        .join("MacOS")
+        .join(nwipc_macos_artifact::BUNDLE_EXECUTABLE);
+    let resources = contents.join("Resources");
+    fs::create_dir_all(executable.parent().expect("executable has parent"))
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&resources).map_err(|error| error.to_string())?;
+    fs::copy(
+        root.join("native/macos/bundle/Info.plist"),
+        contents.join("Info.plist"),
+    )
+    .map_err(|error| error.to_string())?;
+    fs::copy(&binary, &executable).map_err(|error| error.to_string())?;
+    fs::write(
+        resources.join(nwipc_macos_artifact::MANIFEST_FILE),
+        nwipc_macos_artifact::current_manifest(),
+    )
+    .map_err(|error| error.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&executable)
+            .map_err(|error| error.to_string())?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).map_err(|error| error.to_string())?;
+    }
+    bundle_inspect(Some(bundle.to_string_lossy().into_owned()))?;
+    println!("assembled {}", bundle.display());
     Ok(())
 }
 

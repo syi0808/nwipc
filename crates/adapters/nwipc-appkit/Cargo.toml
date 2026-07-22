@@ -11,7 +11,12 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-capabilities.workspace = true
 nwipc-error.workspace = true
+nwipc-macos-artifact.workspace = true
+nwipc-macos-host.workspace = true
+nwipc-macos-spi.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

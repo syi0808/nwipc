@@ -11,7 +11,11 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-bootstrap-schema.workspace = true
 nwipc-error.workspace = true
+nwipc-macos-bundle-api.workspace = true
+nwipc-renderer-bootstrap.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "xtask"
+name = "nwipc-example-macos-appkit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
-nwipc-macos-artifact.workspace = true
+nwipc-appkit = { path = "../../crates/adapters/nwipc-appkit" }
+nwipc-macos-spi.workspace = true
 
 [lints]
 workspace = true

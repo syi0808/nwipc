@@ -106,7 +106,7 @@ P2:
 P3:
 
 - [x] Renderer core, TS packages, JSC
-- [ ] SPI/bundle/host/AppKit example
+- [x] SPI/bundle/host/AppKit example
 
 P4:
 
