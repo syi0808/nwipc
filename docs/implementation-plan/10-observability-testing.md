@@ -93,3 +93,14 @@ Threat model상 인증 없는 공유 region이 허용 불가능하면 crypto를 
 - Crash와 lost signal matrix가 자동화된다.
 - Diagnostics만으로 backend/state/failure code를 식별할 수 있고 payload/secret은 노출되지 않는다.
 
+## Phase 7 hardening 산출물
+
+- Threat model, unsafe 기준선, sanitizer/Miri 범위: [`docs/security.md`](../security.md)
+- Runtime 지원과 failure matrix: [`docs/support-matrix.md`](../support-matrix.md)
+- Arbitrary-input harness/corpus: `fuzz/`
+- Portable 성능 baseline runner: `cargo run --release -p xtask -- benchmark`
+- 주간/수동 Miri, AddressSanitizer, fuzz smoke: `.github/workflows/hardening.yml`
+
+`cargo xtask hardening-check`는 architecture 규칙, unsafe 감사 기준선, 필수 hardening 산출물을
+한 번에 검증한다. 실제 WebKit/IOSurface 경계는 portable sanitizer의 범위가 아니므로 signed
+hardened process E2E와 함께 판단한다.

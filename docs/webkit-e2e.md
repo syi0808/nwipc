@@ -112,4 +112,5 @@ validation 비활성화 entitlement를 추가하지 않는다. 필요성이 발�
 - Production ring/record handshake와 backpressure를 사용하는 WebKit echo
 - Origin별 binding policy
 
-이 항목은 Tier 2 process smoke가 안정화된 뒤 Phase 7 hardening matrix에서 확장한다.
+이 제한은 Phase 7 [지원 매트릭스](support-matrix.md)와 [위협 모델](security.md)에 반영되어
+있으며, 지원 범위를 넓히기 전에 조합별 signed process 결과를 추가해야 한다.

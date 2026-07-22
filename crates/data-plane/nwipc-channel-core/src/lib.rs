@@ -309,4 +309,32 @@ mod tests {
             ErrorCode::Closed
         );
     }
+
+    #[test]
+    fn stress_preserves_bidirectional_fifo_without_signal_progress() {
+        const MESSAGES: u32 = 20_000;
+        let (mut endpoint_a, mut endpoint_b) = in_process_channel(256, 64, 64, 192).unwrap();
+        let mut dropped = FakeSignal::new(FakeSignalMode::Drop);
+        for sequence in 0..MESSAGES {
+            let mut payload = sequence.to_le_bytes().to_vec();
+            payload.resize((sequence as usize % 57) + 4, sequence.to_le_bytes()[0]);
+            let sent = if sequence % 2 == 0 {
+                endpoint_a.send(&payload).unwrap()
+            } else {
+                endpoint_b.send(&payload).unwrap()
+            };
+            if sent.notify {
+                dropped.notify();
+            }
+            let event = if sequence % 2 == 0 {
+                endpoint_b.receive().unwrap()
+            } else {
+                endpoint_a.receive().unwrap()
+            };
+            assert_eq!(event, Some(ChannelEvent::Message(payload)));
+        }
+        assert!(!dropped.try_wait());
+        assert_eq!(endpoint_a.receive().unwrap(), None);
+        assert_eq!(endpoint_b.receive().unwrap(), None);
+    }
 }

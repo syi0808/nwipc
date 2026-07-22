@@ -3,6 +3,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
+use std::time::Instant;
+
+use nwipc_channel_core::{ChannelEvent, in_process_channel};
+use nwipc_error::ErrorCode;
 
 #[cfg(target_os = "macos")]
 use nwipc_memory_api::SharedMemoryProvider;
@@ -20,16 +24,28 @@ const UNSAFE_CRATES: &[&str] = &[
     "nwipc-macos-bundle-shim",
 ];
 
+const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
+    ("crates/data-plane/nwipc-atomic", 5),
+    ("crates/memory/nwipc-memory-iosurface", 24),
+    ("crates/signal/nwipc-signal-darwin", 5),
+    ("crates/renderer/nwipc-renderer-jsc", 76),
+    ("crates/platform/macos/nwipc-macos-spi", 4),
+    ("crates/platform/macos/nwipc-macos-bundle-shim", 7),
+];
+
 fn main() -> ExitCode {
     let mut arguments = env::args().skip(1);
     let result = match arguments.next().as_deref() {
         Some("architecture-check") => architecture_check(),
+        Some("unsafe-audit") => unsafe_audit(),
+        Some("hardening-check") => hardening_check(),
+        Some("benchmark") => benchmark(arguments.next()),
         Some("bundle-manifest") => bundle_manifest(arguments.next()),
         Some("bundle-inspect") => bundle_inspect(arguments.next()),
         Some("bundle-assemble" | "example-embed") => bundle_assemble(arguments.next()),
         Some("webkit-e2e") => webkit_e2e(),
         _ => Err(
-            "usage: cargo xtask <architecture-check|bundle-manifest|bundle-inspect|bundle-assemble|example-embed|webkit-e2e> [path]"
+            "usage: cargo xtask <architecture-check|unsafe-audit|hardening-check|benchmark|bundle-manifest|bundle-inspect|bundle-assemble|example-embed|webkit-e2e> [path]"
                 .into(),
         ),
     };
@@ -41,6 +57,162 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn unsafe_audit() -> Result<(), String> {
+    let root = workspace_root()?;
+    let mut failures = Vec::new();
+    for (relative, expected) in UNSAFE_AUDIT_BASELINE {
+        let mut sources = Vec::new();
+        collect_extension_files(
+            &root.join(relative).join("src"),
+            OsStr::new("rs"),
+            &mut sources,
+        )?;
+        let actual = sources.iter().try_fold(0, |count, source| {
+            read(source).map(|contents| count + unsafe_token_count(&contents))
+        })?;
+        if actual != *expected {
+            failures.push(format!(
+                "{relative}: unsafe token count changed from audited {expected} to {actual}"
+            ));
+        }
+    }
+    let audit = read(&root.join("docs/security.md"))?;
+    for crate_name in UNSAFE_CRATES {
+        if !audit.contains(crate_name) {
+            failures.push(format!("{crate_name}: missing from docs/security.md audit"));
+        }
+    }
+    if failures.is_empty() {
+        println!("unsafe-audit: ok");
+        Ok(())
+    } else {
+        Err(failures.join("\n"))
+    }
+}
+
+fn hardening_check() -> Result<(), String> {
+    architecture_check()?;
+    unsafe_audit()?;
+    let root = workspace_root()?;
+    for required in [
+        "docs/security.md",
+        "docs/support-matrix.md",
+        "fuzz/Cargo.toml",
+        "fuzz/fuzz_targets/record.rs",
+        "fuzz/fuzz_targets/bootstrap.rs",
+        "fuzz/fuzz_targets/layout.rs",
+    ] {
+        if !root.join(required).is_file() {
+            return Err(format!("missing hardening artifact: {required}"));
+        }
+    }
+    println!("hardening-check: ok");
+    Ok(())
+}
+
+fn benchmark(output: Option<String>) -> Result<(), String> {
+    if cfg!(debug_assertions) {
+        return Err("benchmark requires `cargo run --release -p xtask -- benchmark`".into());
+    }
+    let root = workspace_root()?;
+    let output = output.unwrap_or_else(|| "target/hardening/benchmark.md".into());
+    let output = root.join(output);
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let scale = env::var("NWIPC_BENCH_SCALE")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()
+        .map_err(|_| "NWIPC_BENCH_SCALE must be a positive integer")?
+        .unwrap_or(1);
+    if scale == 0 {
+        return Err("NWIPC_BENCH_SCALE must be a positive integer".into());
+    }
+    let cases = [
+        (64_usize, 20_000_usize),
+        (1024, 10_000),
+        (16 * 1024, 2_000),
+        (1024 * 1024, 32),
+    ];
+    let mut report = format!(
+        "# NWIPC benchmark baseline\n\n- OS: {}\n- Architecture: {}\n- Build: release\n- Provider: in-process SPSC\n- Scale: {scale}\n\n| Payload | Iterations | Mean round trip | Throughput | Saturation |\n|---:|---:|---:|---:|---:|\n",
+        env::consts::OS,
+        env::consts::ARCH,
+    );
+    for (payload_length, base_iterations) in cases {
+        let iterations = base_iterations
+            .checked_mul(scale)
+            .ok_or("benchmark iteration overflow")?;
+        let row = benchmark_case(payload_length, iterations)?;
+        report.push_str(&row);
+    }
+    fs::write(&output, report).map_err(|error| error.to_string())?;
+    println!("wrote {}", output.display());
+    Ok(())
+}
+
+fn benchmark_case(payload_length: usize, iterations: usize) -> Result<String, String> {
+    let record_length = payload_length
+        .checked_add(31)
+        .map(|length| length & !7)
+        .ok_or("benchmark record length overflow")?;
+    let capacity = u32::try_from(
+        record_length
+            .checked_mul(8)
+            .ok_or("benchmark capacity overflow")?,
+    )
+    .map_err(|_| "benchmark capacity is not representable")?;
+    let maximum_inline =
+        u32::try_from(payload_length).map_err(|_| "payload is not representable")?;
+    let iterations_u32 =
+        u32::try_from(iterations).map_err(|_| "iteration count is not representable")?;
+    let (mut sender, mut receiver) = in_process_channel(
+        capacity,
+        maximum_inline,
+        capacity / 4,
+        capacity - capacity / 4,
+    )
+    .map_err(|error| error.to_string())?;
+    let payload = vec![0xa5; payload_length];
+    let start = Instant::now();
+    for _ in 0..iterations {
+        sender.send(&payload).map_err(|error| error.to_string())?;
+        match receiver.receive().map_err(|error| error.to_string())? {
+            Some(ChannelEvent::Message(message)) if message.len() == payload_length => {}
+            _ => return Err("benchmark received an unexpected event".into()),
+        }
+    }
+    let elapsed = start.elapsed();
+    let mean_ns = elapsed.as_nanos() / iterations as u128;
+    let bytes_per_second =
+        (f64::from(maximum_inline) * f64::from(iterations_u32)) / elapsed.as_secs_f64();
+
+    let (mut saturation_sender, _saturation_receiver) = in_process_channel(
+        capacity,
+        maximum_inline,
+        capacity / 4,
+        capacity - capacity / 4,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut messages = 0_u64;
+    let mut buffered = 0_u32;
+    loop {
+        match saturation_sender.send(&payload) {
+            Ok(sent) => {
+                messages += 1;
+                buffered = sent.buffered_amount;
+            }
+            Err(error) if error.code() == ErrorCode::Backpressured => break,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(format!(
+        "| {payload_length} B | {iterations} | {mean_ns} ns | {:.2} MiB/s | {messages} msg / {buffered} B |\n",
+        bytes_per_second / (1024.0 * 1024.0),
+    ))
 }
 
 fn architecture_check() -> Result<(), String> {
@@ -639,18 +811,24 @@ fn collect_files(
 }
 
 fn contains_unsafe_token(source: &str) -> bool {
+    unsafe_token_count(source) != 0
+}
+
+fn unsafe_token_count(source: &str) -> usize {
     source
         .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
-        .any(|token| token == "unsafe")
+        .filter(|token| *token == "unsafe")
+        .count()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::contains_unsafe_token;
+    use super::{contains_unsafe_token, unsafe_token_count};
 
     #[test]
     fn detects_tokens_but_not_substrings() {
         assert!(contains_unsafe_token("unsafe fn map() {}"));
         assert!(!contains_unsafe_token("fn unsafeish() {}"));
+        assert_eq!(unsafe_token_count("unsafe { unsafe_call() }"), 1);
     }
 }

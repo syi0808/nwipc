@@ -427,6 +427,8 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "nwipc-channel-core",
+ "nwipc-error",
  "nwipc-macos-artifact",
  "nwipc-memory-api",
  "nwipc-memory-iosurface",

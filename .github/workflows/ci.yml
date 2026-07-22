@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: rustup show active-toolchain
-      - run: cargo xtask architecture-check
+      - run: cargo xtask hardening-check
 
   ts-client:
     runs-on: ubuntu-latest

@@ -13,11 +13,16 @@ bundle assembly/inspection. Unsupported OS/build combinations are reported expli
 
 ```sh
 cargo xtask architecture-check
+cargo xtask hardening-check
 cargo test --workspace
 corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 corepack pnpm test
 ```
+
+Phase 7 threat/unsafe audit, fuzz/sanitizer scope, benchmark procedure, and supported runtime
+combinations are documented in [`docs/security.md`](docs/security.md) and
+[`docs/support-matrix.md`](docs/support-matrix.md).
 
 On an allowlisted macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke,
 including direct renderer↔native-peer `IOSurface` binary echo:

@@ -199,4 +199,21 @@ mod tests {
             ErrorCode::InvalidRange
         );
     }
+
+    #[test]
+    fn committed_record_survives_writer_crash() {
+        let (producer, consumer) = in_process_ring(64).unwrap();
+        let mut writer = RingWriter::new(producer, 32);
+        writer
+            .send(RecordKind::Data, RecordFlags::NONE, b"committed")
+            .unwrap();
+        drop(writer);
+        let committed = consumer.producer_cursor();
+        let bytes = consumer.read(0, committed as usize).unwrap();
+        let header = ParsedRecordHeader::decode_committed(bytes, 32).unwrap();
+        assert_eq!(
+            &bytes[RECORD_PREFIX_SIZE..RECORD_PREFIX_SIZE + header.payload_length as usize],
+            b"committed"
+        );
+    }
 }

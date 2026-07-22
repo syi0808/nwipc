@@ -31,3 +31,25 @@ fn killed_child_is_reaped() {
     let peer = harness.spawn(executable()).unwrap();
     assert!(!peer.kill().unwrap().success());
 }
+
+#[test]
+fn stress_echo_and_process_replacement_do_not_deliver_stale_data() {
+    let harness = ProcessHarness::new(Duration::from_secs(2));
+    let mut previous_session = None;
+    for replacement in 0_u8..6 {
+        let mut peer = harness.spawn(executable()).unwrap();
+        let session = peer.expectation().session_id;
+        assert_ne!(previous_session, Some(session));
+        for sequence in 0_u16..128 {
+            let mut payload = sequence.to_le_bytes().to_vec();
+            payload.resize(usize::from(sequence % 97) + 2, replacement);
+            assert_eq!(peer.echo(&payload).unwrap(), payload);
+        }
+        previous_session = Some(session);
+        if replacement % 2 == 0 {
+            assert!(!peer.kill().unwrap().success());
+        } else {
+            assert!(peer.close().unwrap().success());
+        }
+    }
+}

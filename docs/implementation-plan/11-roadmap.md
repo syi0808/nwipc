@@ -111,7 +111,10 @@ P3:
 P4:
 
 - [x] Reload/kill/generation replacement
-- [ ] Diagnostics, signing, stress/crash/fuzz, support matrix
+- [ ] Diagnostics/metrics operational snapshot
+- [x] Signed/hardened build와 threat model/unsafe audit
+- [x] Stress/crash/fuzz와 sanitizer/Miri 자동화
+- [x] Benchmark baseline과 support/failure matrix
 
 ## Vertical slice 완료 정의
 

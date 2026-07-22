@@ -24,6 +24,9 @@
 
 Accepted decisions: [ADR 0001 — Domain, region layout, record wire contract](../adr/0001-domain-layout-record-wire-contract.md)
 
+Phase 7 hardening: [security/unsafe audit](../security.md),
+[support and failure matrix](../support-matrix.md)
+
 ## 공통 구현 원칙
 
 - 전체 경계는 먼저 정의하되 기능은 vertical slice로 완성한다.
