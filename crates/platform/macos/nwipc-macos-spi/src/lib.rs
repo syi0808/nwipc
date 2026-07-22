@@ -3,20 +3,25 @@
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 
 /// SPI entries required by the vertical slice.
-pub const REQUIRED_SPI: [SpiEntry; 3] = [
+pub const REQUIRED_SPI: [SpiEntry; 4] = [
     SpiEntry::selector(
         "_WKProcessPoolConfiguration",
-        "_setInjectedBundleURL:",
+        "setInjectedBundleURL:",
+        SpiRequirement::Required,
+    ),
+    SpiEntry::selector(
+        "WKProcessPool",
+        "_initWithConfiguration:",
+        SpiRequirement::Required,
+    ),
+    SpiEntry::selector(
+        "WKProcessPool",
+        "_setObject:forBundleParameter:",
         SpiRequirement::Required,
     ),
     SpiEntry::selector(
         "WKWebViewConfiguration",
-        "_setProcessPoolConfiguration:",
-        SpiRequirement::Required,
-    ),
-    SpiEntry::selector(
-        "_WKProcessPoolConfiguration",
-        "_setInjectedBundleInitializationUserData:",
+        "setProcessPool:",
         SpiRequirement::Required,
     ),
 ];

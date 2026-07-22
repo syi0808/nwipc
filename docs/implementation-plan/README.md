@@ -2,6 +2,9 @@
 
 이 디렉터리는 [`1차설계.md`](../../1차설계.md)를 실행 가능한 프로젝트로 옮기기 위한 계획을 책임 경계별로 나눈다. 최초 목표는 macOS AppKit/WKWebView renderer와 별도 native peer 사이의 host-relay 없는 양방향 shared-memory IPC vertical slice다.
 
+실제 signed/hardened `WKWebView` process 검증 절차는
+[`docs/webkit-e2e.md`](../webkit-e2e.md)에서 관리한다.
+
 ## 문서 구조
 
 | 문서 | 범위 |

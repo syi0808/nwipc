@@ -90,3 +90,5 @@
 - WKWebView renderer와 peer가 host relay 없이 양방향 통신한다.
 - Reload/kill 후 old generation을 폐기하고 재연결하거나 terminal error를 반환한다.
 
+Signed/hardened application의 단계별 검증 범위, identity 주입, failure matrix와 실행 명령은
+[`docs/webkit-e2e.md`](../webkit-e2e.md)를 따른다.

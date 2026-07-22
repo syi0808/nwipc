@@ -110,7 +110,7 @@ P3:
 
 P4:
 
-- [ ] Reload/kill/generation replacement
+- [x] Reload/kill/generation replacement
 - [ ] Diagnostics, signing, stress/crash/fuzz, support matrix
 
 ## Vertical slice 완료 정의

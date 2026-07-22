@@ -19,6 +19,15 @@ corepack pnpm typecheck
 corepack pnpm test
 ```
 
+On an allowlisted macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke:
+
+```sh
+cargo xtask webkit-e2e
+```
+
+Trusted identity configuration and failure semantics are documented in
+[`docs/webkit-e2e.md`](docs/webkit-e2e.md).
+
 The design and implementation sequence are documented in
 [`docs/2차구현계획.md`](docs/2차구현계획.md).
 

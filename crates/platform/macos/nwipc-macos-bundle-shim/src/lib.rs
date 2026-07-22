@@ -8,6 +8,9 @@ use std::sync::{Mutex, OnceLock};
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_bundle_api::{BundleEntrypoint, BundleEvent};
 
+/// Prefix accepted for per-run E2E bundle-load notifications.
+pub const E2E_BUNDLE_LOAD_NOTIFICATION_PREFIX: &str = "dev.nwipc.webkit-e2e.bundle-loaded.";
+
 static ENTRYPOINT: OnceLock<Mutex<Option<Box<dyn BundleEntrypoint>>>> = OnceLock::new();
 static INITIALIZATION_FAILED: AtomicBool = AtomicBool::new(false);
 
@@ -73,6 +76,7 @@ pub fn initialization_failed() -> bool {
 #[cfg_attr(target_os = "macos", unsafe(no_mangle))]
 pub extern "C" fn WKBundleInitialize(_bundle: *mut c_void, _user_data: *mut c_void) {
     if catch_unwind(AssertUnwindSafe(|| {
+        post_e2e_load_marker();
         let slot = ENTRYPOINT.get_or_init(|| Mutex::new(None));
         if slot.lock().map_or(true, |entrypoint| entrypoint.is_none()) {
             INITIALIZATION_FAILED.store(true, Ordering::Release);
@@ -83,6 +87,32 @@ pub extern "C" fn WKBundleInitialize(_bundle: *mut c_void, _user_data: *mut c_vo
         INITIALIZATION_FAILED.store(true, Ordering::Release);
     }
 }
+
+#[cfg(target_os = "macos")]
+fn post_e2e_load_marker() {
+    use std::ffi::{CString, c_char};
+
+    #[link(name = "System")]
+    unsafe extern "C" {
+        fn notify_post(name: *const c_char) -> u32;
+    }
+
+    if std::env::var_os("NWIPC_WEBKIT_E2E").is_none_or(|value| value != "1") {
+        return;
+    }
+    let Ok(name) = std::env::var("NWIPC_WEBKIT_E2E_NOTIFICATION") else {
+        return;
+    };
+    if !name.starts_with(E2E_BUNDLE_LOAD_NOTIFICATION_PREFIX) || name.len() > 128 {
+        return;
+    }
+    if let Ok(name) = CString::new(name) {
+        unsafe { notify_post(name.as_ptr()) };
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn post_e2e_load_marker() {}
 
 fn shim_error(operation: &'static str) -> ErrorReport {
     ErrorReport::new(
