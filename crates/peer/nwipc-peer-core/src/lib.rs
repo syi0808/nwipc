@@ -3,10 +3,12 @@
 use nwipc_bootstrap_schema::{BootstrapEnvelope, EndpointRole, ProviderKind};
 use nwipc_capabilities::TransportCapabilities;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
+use nwipc_protocol::{
+    AcceptorConfig, AcceptorHandshake, EndpointRole as ProtocolEndpointRole, HandshakeIdentity,
+    InitiatorConfig, InitiatorHandshake, ProtocolVersion, VersionRange,
+};
 use nwipc_types::{Generation, SessionId};
 
-const HELLO_MAGIC: &[u8; 4] = b"NWPH";
-const ACK_MAGIC: &[u8; 4] = b"NWPA";
 const CLOSE_FRAME: &[u8] = &[1];
 const DATA_KIND: u8 = 0;
 
@@ -83,6 +85,7 @@ pub struct NativePort<T> {
     state: PortState,
     identity: PeerExpectation,
     maximum_message: usize,
+    capabilities: TransportCapabilities,
 }
 
 impl<T: PortTransport> NativePort<T> {
@@ -113,7 +116,8 @@ impl<T: PortTransport> NativePort<T> {
                 "attach peer provider",
             ));
         }
-        let hello = hello_frame(&envelope, expectation)?;
+        let mut handshake = peer_handshake(&envelope, expectation, maximum_message)?;
+        let hello = handshake.hello()?;
         drop(envelope);
         transport.send(&hello)?;
         let acknowledgement = transport.receive()?.ok_or_else(|| {
@@ -123,12 +127,19 @@ impl<T: PortTransport> NativePort<T> {
                 "peer handshake acknowledgement",
             )
         })?;
-        validate_ack(&acknowledgement, expectation)?;
+        let negotiated = handshake.acknowledge(&acknowledgement)?;
         Ok(Self {
             transport,
             state: PortState::Open,
             identity: expectation,
-            maximum_message,
+            maximum_message: usize::try_from(negotiated.maximum_message).map_err(|_| {
+                peer_error(
+                    ErrorCode::InvalidRange,
+                    Recoverability::ReplaceEndpoint,
+                    "peer negotiated message limit",
+                )
+            })?,
+            capabilities: negotiated.capabilities.capabilities(),
         })
     }
 
@@ -224,9 +235,7 @@ impl<T: PortTransport> NativePort<T> {
 
     /// Capabilities guaranteed by the Phase 3 process-test transport.
     pub const fn capabilities(&self) -> TransportCapabilities {
-        TransportCapabilities::SHARED_MEMORY_DATA_PLANE
-            .union(TransportCapabilities::BINARY_MESSAGES)
-            .union(TransportCapabilities::BOUNDED_BACKPRESSURE)
+        self.capabilities
     }
 
     fn ensure_open(&self, operation: &'static str) -> Result<(), ErrorReport> {
@@ -251,20 +260,7 @@ pub fn hello_frame(
     envelope: &BootstrapEnvelope,
     expectation: PeerExpectation,
 ) -> Result<Vec<u8>, ErrorReport> {
-    let secret_length = u16::try_from(envelope.secret().expose().len()).map_err(|_| {
-        peer_error(
-            ErrorCode::InvalidRange,
-            Recoverability::ReplaceEndpoint,
-            "peer hello secret",
-        )
-    })?;
-    let mut frame = Vec::with_capacity(30 + usize::from(secret_length));
-    frame.extend_from_slice(HELLO_MAGIC);
-    frame.extend_from_slice(&expectation.session_id.to_bytes());
-    frame.extend_from_slice(&expectation.generation.get().to_le_bytes());
-    frame.extend_from_slice(&secret_length.to_le_bytes());
-    frame.extend_from_slice(envelope.secret().expose());
-    Ok(frame)
+    peer_handshake(envelope, expectation, u32::MAX as usize)?.hello()
 }
 
 /// Validates HELLO at the parent and returns the matching ACK.
@@ -277,43 +273,73 @@ pub fn acknowledge_hello(
     expectation: PeerExpectation,
     secret: &[u8],
 ) -> Result<Vec<u8>, ErrorReport> {
-    let fixed = 30;
-    if hello.len() < fixed || &hello[..4] != HELLO_MAGIC {
-        return Err(handshake_error("validate peer hello"));
-    }
-    if hello[4..20] != expectation.session_id.to_bytes()
-        || hello[20..28] != expectation.generation.get().to_le_bytes()
-    {
-        return Err(handshake_error("validate peer hello identity"));
-    }
-    let secret_length = usize::from(u16::from_le_bytes([hello[28], hello[29]]));
-    if hello.len() != fixed + secret_length || hello[fixed..] != *secret {
-        return Err(handshake_error("validate peer hello secret"));
-    }
-    let mut acknowledgement = Vec::with_capacity(28);
-    acknowledgement.extend_from_slice(ACK_MAGIC);
-    acknowledgement.extend_from_slice(&expectation.session_id.to_bytes());
-    acknowledgement.extend_from_slice(&expectation.generation.get().to_le_bytes());
-    Ok(acknowledgement)
+    let version = protocol_version(expectation.protocol)?;
+    let mut handshake = AcceptorHandshake::new(AcceptorConfig {
+        identity: HandshakeIdentity {
+            session_id: expectation.session_id,
+            generation: expectation.generation,
+            role: ProtocolEndpointRole::Coordinator,
+        },
+        remote_role: ProtocolEndpointRole::Peer,
+        versions: VersionRange::exact(version),
+        supported: nwipc_capabilities::SupportedCapabilities::new(default_capabilities()),
+        maximum_message: u32::MAX,
+        proof: secret.to_vec(),
+    })?;
+    handshake
+        .accept(hello)
+        .map(|(acknowledgement, _)| acknowledgement)
 }
 
-fn validate_ack(acknowledgement: &[u8], expectation: PeerExpectation) -> Result<(), ErrorReport> {
-    if acknowledgement.len() != 28
-        || &acknowledgement[..4] != ACK_MAGIC
-        || acknowledgement[4..20] != expectation.session_id.to_bytes()
-        || acknowledgement[20..] != expectation.generation.get().to_le_bytes()
-    {
-        return Err(handshake_error("validate peer acknowledgement"));
-    }
-    Ok(())
+fn peer_handshake(
+    envelope: &BootstrapEnvelope,
+    expectation: PeerExpectation,
+    maximum_message: usize,
+) -> Result<InitiatorHandshake, ErrorReport> {
+    let maximum_message = u32::try_from(maximum_message).map_err(|_| {
+        peer_error(
+            ErrorCode::InvalidRange,
+            Recoverability::ReplaceEndpoint,
+            "peer message limit",
+        )
+    })?;
+    InitiatorHandshake::new(InitiatorConfig {
+        identity: HandshakeIdentity {
+            session_id: expectation.session_id,
+            generation: expectation.generation,
+            role: ProtocolEndpointRole::Peer,
+        },
+        remote_role: ProtocolEndpointRole::Coordinator,
+        versions: VersionRange::exact(protocol_version(expectation.protocol)?),
+        requested: nwipc_capabilities::RequestedCapabilities::new(default_capabilities()),
+        required: nwipc_capabilities::RequiredCapabilities::new(default_capabilities()),
+        maximum_message,
+        proof: envelope.secret().expose().to_vec(),
+    })
 }
 
-fn handshake_error(operation: &'static str) -> ErrorReport {
-    peer_error(
-        ErrorCode::ProtocolViolation,
-        Recoverability::ReplaceEndpoint,
-        operation,
-    )
+fn protocol_version(version: u16) -> Result<ProtocolVersion, ErrorReport> {
+    let major = u8::try_from(version).map_err(|_| {
+        peer_error(
+            ErrorCode::LayoutVersionMismatch,
+            Recoverability::ReplaceEndpoint,
+            "peer protocol version",
+        )
+    })?;
+    if major == 0 {
+        return Err(peer_error(
+            ErrorCode::LayoutVersionMismatch,
+            Recoverability::ReplaceEndpoint,
+            "peer protocol version",
+        ));
+    }
+    Ok(ProtocolVersion::new(major, 0))
+}
+
+const fn default_capabilities() -> TransportCapabilities {
+    TransportCapabilities::SHARED_MEMORY_DATA_PLANE
+        .union(TransportCapabilities::BINARY_MESSAGES)
+        .union(TransportCapabilities::BOUNDED_BACKPRESSURE)
 }
 
 fn peer_error(
@@ -382,15 +408,18 @@ mod tests {
         .unwrap()
     }
 
-    fn acknowledgement() -> Vec<u8> {
-        let hello = hello_frame(&envelope(), expectation()).unwrap();
+    fn acknowledgement(maximum_message: usize) -> Vec<u8> {
+        let hello = peer_handshake(&envelope(), expectation(), maximum_message)
+            .unwrap()
+            .hello()
+            .unwrap();
         acknowledge_hello(&hello, expectation(), b"secret").unwrap()
     }
 
     #[test]
     fn attaches_exchanges_and_closes_idempotently() {
         let transport = FakeTransport {
-            received: VecDeque::from([acknowledgement(), vec![0, 1, 2]]),
+            received: VecDeque::from([acknowledgement(16), vec![0, 1, 2]]),
             sent: Vec::new(),
             closed: false,
         };

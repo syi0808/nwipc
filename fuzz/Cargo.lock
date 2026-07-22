@@ -87,6 +87,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-capabilities"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+]
+
+[[package]]
 name = "nwipc-error"
 version = "0.0.0"
 
@@ -106,16 +113,28 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "nwipc-bootstrap-codec",
+ "nwipc-capabilities",
  "nwipc-fragment",
  "nwipc-layout",
+ "nwipc-protocol",
  "nwipc-record",
  "nwipc-types",
+ "nwipc-validation",
 ]
 
 [[package]]
 name = "nwipc-layout"
 version = "0.0.0"
 dependencies = [
+ "nwipc-error",
+ "nwipc-types",
+]
+
+[[package]]
+name = "nwipc-protocol"
+version = "0.0.0"
+dependencies = [
+ "nwipc-capabilities",
  "nwipc-error",
  "nwipc-types",
 ]
@@ -132,6 +151,16 @@ dependencies = [
 [[package]]
 name = "nwipc-types"
 version = "0.0.0"
+
+[[package]]
+name = "nwipc-validation"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+ "nwipc-layout",
+ "nwipc-record",
+ "nwipc-types",
+]
 
 [[package]]
 name = "r-efi"

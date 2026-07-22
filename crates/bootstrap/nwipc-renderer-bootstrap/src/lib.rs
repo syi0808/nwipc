@@ -6,7 +6,12 @@ use nwipc_bootstrap_schema::{
     BootstrapEnvelope, BootstrapSecret, EndpointRole, OpaqueDescriptor, ProtocolRange,
     ProviderKind, SCHEMA_VERSION,
 };
+use nwipc_capabilities::{RequestedCapabilities, RequiredCapabilities};
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
+use nwipc_protocol::{
+    EndpointRole as ProtocolEndpointRole, HandshakeIdentity, InitiatorConfig, InitiatorHandshake,
+    ProtocolVersion, VersionRange,
+};
 use nwipc_types::{Generation, SessionId};
 
 /// Property-list scalar copied out of `WebKit` initialization user data.
@@ -59,6 +64,45 @@ impl<Memory, Signal> RendererAttachment<Memory, Signal> {
     /// Validated envelope identity.
     pub const fn envelope(&self) -> &BootstrapEnvelope {
         &self.envelope
+    }
+
+    /// Creates the renderer side of the common production HELLO/ACK handshake.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid selected version, message limit, or proof before emitting bytes.
+    pub fn handshake(
+        &self,
+        protocol: u16,
+        maximum_message: u32,
+        requested: RequestedCapabilities,
+        required: RequiredCapabilities,
+    ) -> Result<InitiatorHandshake, ErrorReport> {
+        let major = u8::try_from(protocol).map_err(|_| {
+            bootstrap_error(
+                ErrorCode::LayoutVersionMismatch,
+                "renderer protocol version",
+            )
+        })?;
+        if major == 0 || !self.envelope.protocols().contains(protocol) {
+            return Err(bootstrap_error(
+                ErrorCode::LayoutVersionMismatch,
+                "renderer protocol version",
+            ));
+        }
+        InitiatorHandshake::new(InitiatorConfig {
+            identity: HandshakeIdentity {
+                session_id: self.envelope.session_id(),
+                generation: self.envelope.generation(),
+                role: ProtocolEndpointRole::Renderer,
+            },
+            remote_role: ProtocolEndpointRole::Peer,
+            versions: VersionRange::exact(ProtocolVersion::new(major, 0)),
+            requested,
+            required,
+            maximum_message,
+            proof: self.envelope.secret().expose().to_vec(),
+        })
     }
 }
 
@@ -205,6 +249,8 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
+    use nwipc_capabilities::{SupportedCapabilities, TransportCapabilities};
+    use nwipc_protocol::{AcceptorConfig, AcceptorHandshake};
 
     fn dictionary() -> PropertyDictionary {
         let descriptor = |provider| {
@@ -279,5 +325,55 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(dropped.get());
+    }
+
+    #[test]
+    fn renderer_uses_common_protocol_handshake() {
+        struct Providers;
+        impl RendererProviders for Providers {
+            type Memory = ();
+            type Signal = ();
+            fn attach_memory(&mut self, _: &OpaqueDescriptor) -> Result<(), ErrorReport> {
+                Ok(())
+            }
+            fn attach_signal(&mut self, _: &OpaqueDescriptor) -> Result<(), ErrorReport> {
+                Ok(())
+            }
+        }
+        let session = SessionId::from_u128(1).unwrap();
+        let generation = Generation::new(1).unwrap();
+        let attachment = RendererBootstrap::attach(
+            RendererBootstrap::decode(dictionary()).unwrap(),
+            session,
+            generation,
+            1,
+            &mut Providers,
+        )
+        .unwrap();
+        let capability = TransportCapabilities::BINARY_MESSAGES;
+        let mut renderer = attachment
+            .handshake(
+                1,
+                4096,
+                RequestedCapabilities::new(capability),
+                RequiredCapabilities::new(capability),
+            )
+            .unwrap();
+        let hello = renderer.hello().unwrap();
+        let mut peer = AcceptorHandshake::new(AcceptorConfig {
+            identity: HandshakeIdentity {
+                session_id: session,
+                generation,
+                role: ProtocolEndpointRole::Peer,
+            },
+            remote_role: ProtocolEndpointRole::Renderer,
+            versions: VersionRange::exact(ProtocolVersion::new(1, 0)),
+            supported: SupportedCapabilities::new(capability),
+            maximum_message: 2048,
+            proof: vec![9; 32],
+        })
+        .unwrap();
+        let (ack, accepted) = peer.accept(&hello).unwrap();
+        assert_eq!(renderer.acknowledge(&ack).unwrap(), accepted);
     }
 }

@@ -12,6 +12,18 @@
       "contract": "record",
       "version": 1,
       "length": 32
+    },
+    {
+      "file": "protocol-v1-hello.hex",
+      "contract": "protocol",
+      "version": 256,
+      "length": 69
+    },
+    {
+      "file": "bootstrap-v1.hex",
+      "contract": "bootstrap",
+      "version": 1,
+      "length": 107
     }
   ]
 }

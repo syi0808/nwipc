@@ -8,6 +8,8 @@ cargo fuzz run record -- -max_total_time=60
 cargo fuzz run bootstrap -- -max_total_time=60
 cargo fuzz run layout -- -max_total_time=60
 cargo fuzz run fragment -- -max_total_time=60
+cargo fuzz run protocol -- -max_total_time=60
+cargo fuzz run validation -- -max_total_time=60
 ```
 
 Committed seeds cover magic prefixes, truncation, and the record golden fixture shape. CI performs

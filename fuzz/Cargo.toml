@@ -10,10 +10,13 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 nwipc-bootstrap-codec = { path = "../crates/bootstrap/nwipc-bootstrap-codec" }
+nwipc-capabilities = { path = "../crates/domain/nwipc-capabilities" }
 nwipc-fragment = { path = "../crates/data-plane/nwipc-fragment" }
 nwipc-layout = { path = "../crates/protocol/nwipc-layout" }
+nwipc-protocol = { path = "../crates/protocol/nwipc-protocol" }
 nwipc-record = { path = "../crates/protocol/nwipc-record" }
 nwipc-types = { path = "../crates/domain/nwipc-types" }
+nwipc-validation = { path = "../crates/protocol/nwipc-validation" }
 
 [[bin]]
 name = "record"
@@ -39,6 +42,20 @@ bench = false
 [[bin]]
 name = "fragment"
 path = "fuzz_targets/fragment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "protocol"
+path = "fuzz_targets/protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "validation"
+path = "fuzz_targets/validation.rs"
 test = false
 doc = false
 bench = false

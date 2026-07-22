@@ -250,7 +250,11 @@ mod tests {
     #[test]
     fn round_trips_canonical_envelope() {
         let encoded = encode(&envelope()).unwrap();
-        assert_eq!(&encoded[..6], b"NWBS\x01\x00");
+        let expected = decode_hex(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/protocol-fixtures/bootstrap-v1.hex"
+        )));
+        assert_eq!(encoded, expected);
         assert_eq!(decode(&encoded).unwrap(), envelope());
     }
 
@@ -287,5 +291,12 @@ mod tests {
         encoded.extend_from_slice(&3_u32.to_le_bytes());
         encoded.extend_from_slice(b"new");
         assert_eq!(decode(&encoded).unwrap(), envelope());
+    }
+
+    fn decode_hex(source: &str) -> Vec<u8> {
+        source
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+            .collect()
     }
 }

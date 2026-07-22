@@ -113,12 +113,12 @@ P0:
 - [x] First-slice skeleton과 architecture check
 - [x] Domain contract와 layout/record ADR
 - [x] Layout/record fixture와 fake memory/signal provider
-- [ ] Protocol/handshake fixture
+- [x] Protocol/handshake fixture
 
 P1:
 
 - [x] Layout/record
-- [ ] Validation/protocol handshake
+- [x] Validation/protocol handshake
 - [x] Atomic/ring/flow/channel
 - [x] Data-plane boundary/concurrency test와 in-process echo
 
@@ -145,7 +145,7 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record | 단위 완료 | Protocol/validation 단일 진입점과 handshake 연결 |
+| Domain, layout, record, protocol, validation | 단위 완료 | 협상 결과와 validator를 M3 production transport attach에 연결 |
 | Ring, flow, channel, fragmentation | 단위 완료 | OS mapping/signal adapter와 capability 협상 연결 |
 | IOSurface, Darwin, polling/hybrid | Provider 통합 | 공통 channel contract를 사용하는 양방향 transport 조립 |
 | Bootstrap schema/codec | 단위 완료 | Runtime resource ownership과 실제 provider descriptor 수명 연결 |
@@ -176,13 +176,16 @@ Hardening은 PR, `main` push, 주간 schedule에서 같은 범위를 실행한�
 
 ### M1 — Protocol과 validation 폐쇄
 
-- `nwipc-protocol`에 version/capability 협상과 HELLO/ACK state machine 구현
-- `nwipc-validation`에 layout/cursor/record/payload 검증 단일 진입점 구현
-- Peer와 renderer가 공통 handshake와 stable error mapping 사용
-- Protocol/bootstrap golden fixture, property test, arbitrary-input fuzz 추가
+- [x] `nwipc-protocol`에 version/capability 협상과 HELLO/ACK state machine 구현
+- [x] `nwipc-validation`에 layout/cursor/record/payload 검증 단일 진입점 구현
+- [x] Peer와 renderer가 공통 handshake와 stable error mapping 사용
+- [x] Protocol/bootstrap golden fixture, property test, arbitrary-input fuzz 추가
 
 완료: 두 crate의 production path에서 placeholder `Unsupported`가 제거되고 malformed input이 mapping
 범위 접근 전에 stable typed error로 거부된다.
+
+검증 경로는 protocol/bootstrap golden fixture, version overlap 전수 property test, protocol/validation fuzz
+target, 공통 peer/renderer handshake contract test와 workspace clippy/test gate다.
 
 ### M2 — Session과 runtime ownership
 

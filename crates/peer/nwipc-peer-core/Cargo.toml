@@ -14,6 +14,7 @@ owner = "nwipc"
 nwipc-bootstrap-schema.workspace = true
 nwipc-capabilities = { path = "../../domain/nwipc-capabilities" }
 nwipc-error.workspace = true
+nwipc-protocol.workspace = true
 nwipc-types.workspace = true
 
 [lints]

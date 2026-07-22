@@ -231,6 +231,7 @@ dependencies = [
  "nwipc-bootstrap-schema",
  "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-protocol",
  "nwipc-types",
 ]
 
@@ -249,7 +250,9 @@ dependencies = [
 name = "nwipc-protocol"
 version = "0.0.0"
 dependencies = [
+ "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -283,7 +286,9 @@ name = "nwipc-renderer-bootstrap"
 version = "0.0.0"
 dependencies = [
  "nwipc-bootstrap-schema",
+ "nwipc-capabilities",
  "nwipc-error",
+ "nwipc-protocol",
  "nwipc-types",
 ]
 
@@ -426,6 +431,9 @@ name = "nwipc-validation"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-layout",
+ "nwipc-record",
+ "nwipc-types",
 ]
 
 [[package]]

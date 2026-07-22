@@ -31,6 +31,8 @@ license = "MIT OR Apache-2.0"
 nwipc-error = { version = "=0.0.0", path = "crates/domain/nwipc-error" }
 nwipc-layout = { version = "=0.0.0", path = "crates/protocol/nwipc-layout" }
 nwipc-record = { version = "=0.0.0", path = "crates/protocol/nwipc-record" }
+nwipc-protocol = { version = "=0.0.0", path = "crates/protocol/nwipc-protocol" }
+nwipc-validation = { version = "=0.0.0", path = "crates/protocol/nwipc-validation" }
 nwipc-types = { version = "=0.0.0", path = "crates/domain/nwipc-types" }
 nwipc-atomic = { version = "=0.0.0", path = "crates/data-plane/nwipc-atomic" }
 nwipc-ring-core = { version = "=0.0.0", path = "crates/data-plane/nwipc-ring-core" }

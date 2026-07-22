@@ -33,6 +33,7 @@ jobs:
           RUSTFLAGS="-Zsanitizer=address" RUSTDOCFLAGS="-Zsanitizer=address"
           cargo +nightly test --target x86_64-unknown-linux-gnu
           -p nwipc-layout -p nwipc-record -p nwipc-bootstrap-codec
+          -p nwipc-protocol -p nwipc-validation
           -p nwipc-atomic -p nwipc-ring-core -p nwipc-ring-writer
           -p nwipc-ring-reader -p nwipc-fragment -p nwipc-channel-core
 
@@ -46,3 +47,5 @@ jobs:
       - run: cargo +nightly fuzz run bootstrap -- -max_total_time=30
       - run: cargo +nightly fuzz run layout -- -max_total_time=30
       - run: cargo +nightly fuzz run fragment -- -max_total_time=30
+      - run: cargo +nightly fuzz run protocol -- -max_total_time=30
+      - run: cargo +nightly fuzz run validation -- -max_total_time=30
