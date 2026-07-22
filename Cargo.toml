@@ -27,6 +27,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 nwipc-error = { version = "=0.0.0", path = "crates/domain/nwipc-error" }
+nwipc-layout = { version = "=0.0.0", path = "crates/protocol/nwipc-layout" }
 nwipc-types = { version = "=0.0.0", path = "crates/domain/nwipc-types" }
 
 [workspace.lints.rust]

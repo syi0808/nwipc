@@ -1,4 +1,17 @@
 {
   "schema": 1,
-  "fixtures": []
+  "fixtures": [
+    {
+      "file": "layout-v1-prefix.hex",
+      "contract": "layout",
+      "version": 1,
+      "length": 64
+    },
+    {
+      "file": "record-v1-data.hex",
+      "contract": "record",
+      "version": 1,
+      "length": 32
+    }
+  ]
 }

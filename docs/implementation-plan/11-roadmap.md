@@ -88,7 +88,7 @@ P0:
 
 - [x] Cargo/pnpm workspace, toolchain, lint, deny, license
 - [x] First-slice skeleton과 architecture check
-- [ ] Domain contract와 layout/record ADR
+- [x] Domain contract와 layout/record ADR
 - [ ] Protocol fixture와 fake provider
 
 P1:

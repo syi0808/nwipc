@@ -74,6 +74,7 @@ name = "nwipc-layout"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -186,6 +187,8 @@ name = "nwipc-record"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-layout",
+ "nwipc-types",
 ]
 
 [[package]]

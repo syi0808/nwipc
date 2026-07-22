@@ -19,6 +19,8 @@
 | [10-observability-testing.md](10-observability-testing.md) | diagnostics, metrics, testkit, failure matrix |
 | [11-roadmap.md](11-roadmap.md) | 단계, 백로그, 완료 정의, ADR 결정사항 |
 
+Accepted decisions: [ADR 0001 — Domain, region layout, record wire contract](../adr/0001-domain-layout-record-wire-contract.md)
+
 ## 공통 구현 원칙
 
 - 전체 경계는 먼저 정의하되 기능은 vertical slice로 완성한다.
@@ -62,4 +64,3 @@ Phase 2 종료 시 ring/protocol/signal/session의 세부 crate가 지나치게 
 3. [Memory](04-memory.md), [Signal](05-signal.md), [Bootstrap/Runtime](06-bootstrap-runtime.md)
 4. [Peer](07-peer.md), [Renderer/Client](08-renderer-client.md), [macOS/WebKit](09-macos-webkit.md)
 5. [검증 계획](10-observability-testing.md)과 [로드맵](11-roadmap.md)
-

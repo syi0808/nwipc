@@ -3,8 +3,8 @@
 NWIPC is an experimental, host-relay-free shared-memory IPC transport for a macOS
 `WKWebView` renderer and a native peer process.
 
-The repository is currently at the scaffold stage. Platform-independent crates and
-TypeScript packages compile, while unavailable provider and platform operations return a
+The repository is implementing its protocol foundation. Domain values and the version-1 region
+layout and record wire codecs are available; later provider and platform operations still return a
 typed `Unsupported` error instead of silently succeeding.
 
 ## Development
