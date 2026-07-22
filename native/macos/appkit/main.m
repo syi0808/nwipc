@@ -7,7 +7,7 @@
 #include <string.h>
 
 static const char *NotificationPrefix = "dev.nwipc.webkit-e2e.bundle-loaded.";
-static const char *EchoNotificationPrefix = "dev.nwipc.webkit-e2e.binary-echo.";
+static const char *TransportNotificationPrefix = "dev.nwipc.webkit-e2e.transport.";
 
 @interface NavigationObserver : NSObject <WKNavigationDelegate>
 @property(nonatomic) NSUInteger finishes;
@@ -152,31 +152,31 @@ int main(int argc, const char *argv[]) {
         }
         int initialNotificationState = 0;
         notify_check(notificationToken, &initialNotificationState);
-        const char *echoNotification = getenv("NWIPC_WEBKIT_E2E_ECHO_NOTIFICATION");
-        if (echoNotification == NULL || strncmp(echoNotification, EchoNotificationPrefix, strlen(EchoNotificationPrefix)) != 0) {
-            fprintf(stderr, "failed: invalid binary echo marker name\n");
+        const char *transportNotification = getenv("NWIPC_WEBKIT_E2E_TRANSPORT_NOTIFICATION");
+        if (transportNotification == NULL || strncmp(transportNotification, TransportNotificationPrefix, strlen(TransportNotificationPrefix)) != 0) {
+            fprintf(stderr, "failed: invalid transport marker name\n");
             notify_cancel(notificationToken);
             return 64;
         }
-        int echoNotificationToken = 0;
-        if (notify_register_check(echoNotification, &echoNotificationToken) != NOTIFY_STATUS_OK) {
-            fprintf(stderr, "failed: could not register binary echo marker\n");
+        int transportNotificationToken = 0;
+        if (notify_register_check(transportNotification, &transportNotificationToken) != NOTIFY_STATUS_OK) {
+            fprintf(stderr, "failed: could not register transport marker\n");
             notify_cancel(notificationToken);
             return 70;
         }
-        notify_check(echoNotificationToken, &initialNotificationState);
+        notify_check(transportNotificationToken, &initialNotificationState);
 
         id privateConfiguration = SendId(privateConfigurationClass, "new");
         SendVoidId(privateConfiguration, "setInjectedBundleURL:", [NSURL fileURLWithPath:bundlePath]);
         id processPool = SendIdId(SendId(processPoolClass, "alloc"), "_initWithConfiguration:", privateConfiguration);
         SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"1", @"nwipc.e2e.enabled");
-        if (!SetBundleParameter(processPool, @"nwipc.e2e.iosurface", "NWIPC_WEBKIT_E2E_IOSURFACE") ||
+        if (!SetBundleParameter(processPool, @"nwipc.e2e.renderer-bootstrap", "NWIPC_WEBKIT_E2E_RENDERER_BOOTSTRAP") ||
             !SetBundleParameter(processPool, @"nwipc.e2e.load-notification", "NWIPC_WEBKIT_E2E_NOTIFICATION") ||
-            !SetBundleParameter(processPool, @"nwipc.e2e.echo-notification", "NWIPC_WEBKIT_E2E_ECHO_NOTIFICATION") ||
+            !SetBundleParameter(processPool, @"nwipc.e2e.transport-notification", "NWIPC_WEBKIT_E2E_TRANSPORT_NOTIFICATION") ||
             !SetBundleParameter(processPool, @"nwipc.e2e.timeout", "NWIPC_E2E_TIMEOUT_SECONDS")) {
             fprintf(stderr, "failed: missing E2E bundle parameter\n");
             notify_cancel(notificationToken);
-            notify_cancel(echoNotificationToken);
+            notify_cancel(transportNotificationToken);
             return 64;
         }
 
@@ -200,13 +200,22 @@ int main(int argc, const char *argv[]) {
                     (unsigned long)observer.finishes,
                     observer.failure.localizedDescription.UTF8String ?: "none");
             notify_cancel(notificationToken);
-            notify_cancel(echoNotificationToken);
+            notify_cancel(transportNotificationToken);
             return 3;
         }
-        if (!WaitForNotification(echoNotificationToken, timeout)) {
-            fprintf(stderr, "timeout: renderer to native-peer binary echo\n");
+        if (!WaitForNotification(transportNotificationToken, timeout)) {
+            uint64_t transportState = 0;
+            notify_get_state(transportNotificationToken, &transportState);
+            fprintf(stderr, "timeout: renderer to native-peer production transport matrix stage=%llu\n", transportState);
             notify_cancel(notificationToken);
-            notify_cancel(echoNotificationToken);
+            notify_cancel(transportNotificationToken);
+            return 4;
+        }
+        uint64_t transportState = 0;
+        if (notify_get_state(transportNotificationToken, &transportState) != NOTIFY_STATUS_OK || transportState != 1) {
+            fprintf(stderr, "failed: production transport matrix stage=%llu\n", transportState);
+            notify_cancel(notificationToken);
+            notify_cancel(transportNotificationToken);
             return 4;
         }
         pid_t initialPID = WebProcessIdentifier(webView);
@@ -221,13 +230,13 @@ int main(int argc, const char *argv[]) {
                     WebProcessIdentifier(webView),
                     observer.failure.localizedDescription.UTF8String ?: "none");
             notify_cancel(notificationToken);
-            notify_cancel(echoNotificationToken);
+            notify_cancel(transportNotificationToken);
             return 5;
         }
 
         notify_cancel(notificationToken);
-        notify_cancel(echoNotificationToken);
-        printf("webkit-e2e: initial-load=ok binary-echo=ok replacement-process=ok hardened-process=ok\n");
+        notify_cancel(transportNotificationToken);
+        printf("webkit-e2e: initial-load=ok production-transport=ok boundaries=ok backpressure=ok replacement-process=ok hardened-process=ok\n");
         return 0;
     }
 }

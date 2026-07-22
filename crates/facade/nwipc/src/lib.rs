@@ -264,6 +264,25 @@ impl Session {
             .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume peer bootstrap"))?;
         write_envelope(writer, &envelope)
     }
+
+    /// Writes the one-shot canonical renderer bootstrap for a process-pool property-list value.
+    ///
+    /// This is control-plane data for the injected bundle. The host must pass it through without
+    /// decoding it and must never use the returned bytes as an application payload channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Closed` after consumption or a typed bootstrap encoding error.
+    pub fn write_renderer_bootstrap(&mut self, writer: &mut impl Write) -> Result<(), ErrorReport> {
+        let envelope = self
+            .renderer_bootstrap
+            .take()
+            .ok_or_else(|| configuration_error(ErrorCode::Closed, "consume renderer bootstrap"))?;
+        let encoded = nwipc_bootstrap_codec::encode(&envelope)?;
+        writer
+            .write_all(&encoded)
+            .map_err(|_| configuration_error(ErrorCode::Closed, "write renderer bootstrap"))
+    }
 }
 
 /// Redacted child-process launch values. No provider descriptor is exposed.
@@ -513,6 +532,27 @@ mod tests {
         let debug = format!("{environment:?}");
         assert!(!debug.contains("IOSurface"));
         assert!(!debug.contains("Darwin"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn renderer_bootstrap_is_canonical_and_one_shot() {
+        let mut nwipc = Nwipc::initialize().unwrap();
+        let mut session = nwipc.create_session().unwrap();
+        let expected_session = session.id();
+        let expected_generation = session.generation();
+        let mut encoded = Vec::new();
+        session.write_renderer_bootstrap(&mut encoded).unwrap();
+        let envelope = nwipc_bootstrap_codec::decode(&encoded).unwrap();
+        envelope
+            .validate_for(
+                EndpointRole::Renderer,
+                expected_session,
+                expected_generation,
+                Configuration::default().protocol,
+            )
+            .unwrap();
+        assert!(session.write_renderer_bootstrap(&mut Vec::new()).is_err());
     }
 
     #[cfg(target_os = "macos")]

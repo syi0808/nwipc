@@ -14,11 +14,12 @@ owner = "nwipc"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+nwipc-bootstrap-codec.workspace = true
 nwipc-error.workspace = true
 nwipc-macos-bundle-api.workspace = true
-nwipc-memory-api.workspace = true
-nwipc-memory-iosurface.workspace = true
-nwipc-types.workspace = true
+nwipc-macos-transport.workspace = true
+nwipc-renderer-api.workspace = true
+nwipc-renderer-bootstrap.workspace = true
 nwipc-webkit-testkit.workspace = true
 
 [lints.rust]

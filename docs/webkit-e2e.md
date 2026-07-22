@@ -28,7 +28,7 @@ navigation/lifecycle, bundle load, echo completion notification뿐이며 payload
 - App과 bundle을 ad-hoc identity(`-`) 및 `--options runtime`으로 서명
 - `codesign --verify --strict`와 hardened runtime flag 검사
 - 실제 `WKWebView` navigation과 `WebContent` injected-bundle load 확인
-- Signed native-peer helper와 `WebContent` 사이의 직접 `IOSurface` binary echo 확인
+- Signed native-peer helper와 `WebContent` 사이의 production protocol/channel echo 확인
 - `WebContent` 강제 종료 후 새 process identity와 navigation 확인
 
 로컬 기본 모드다. Hardened runtime과 nested-code 구조는 검증하지만 Team ID와 배포 인증서
@@ -66,8 +66,8 @@ cargo xtask webkit-e2e
 4. Nested bundle을 먼저, outer app을 나중에 hardened runtime으로 서명한다.
 5. Native-peer helper를 hardened runtime으로 서명하고 outer app의 nested code로 봉인한다.
 6. 서명 구조, runtime flag, entitlement, `WKBundleInitialize` export를 검사한다.
-7. Host가 `IOSurface` descriptor를 renderer와 peer에 전달하고 payload path에서는 빠진다.
-8. App executable과 peer helper를 실행해 binary echo, initial bundle marker, process replacement를 기다린다.
+7. Facade가 peer bootstrap pipe와 opaque renderer bootstrap property-list를 각각 전달한다.
+8. App executable과 peer helper를 실행해 boundary/backpressure matrix, bundle marker, process replacement를 기다린다.
 
 생성물과 child stdout/stderr는 `target/webkit-e2e/`에 보존한다. 제한 시간은
 `NWIPC_E2E_TIMEOUT_SECONDS`로 조정하며 기본값은 20초다.
@@ -80,7 +80,8 @@ cargo xtask webkit-e2e
 - JIT, unsigned executable memory, library validation 해제, debugger entitlement가 없다.
 - App harness가 required SPI class/selector를 모두 확인한다.
 - 첫 navigation에서 bundle load marker를 한 번 관찰한다.
-- Renderer가 `[0x00, 0x01, 0xff, 0x02, ...]` payload를 쓰고 peer가 동일 bytes를 echo한다.
+- Renderer가 zero/exact-inline/fragmented/maximum binary payload를 보내고 peer가 동일 bytes를 echo한다.
+- Saturation이 backpressure 상태에 진입하고 low watermark 아래에서 writable edge를 한 번 회복한다.
 - Echo 동안 host harness와 `xtask`는 payload bytes를 읽거나 복사하지 않는다.
 - `_killWebContentProcessAndResetState` 뒤 process ID가 바뀌고 새 navigation이 완료된다.
 - App harness가 제한 시간 안에 exit code 0으로 종료한다.
@@ -95,7 +96,7 @@ cargo xtask webkit-e2e
 | signing identity 없음 | trusted mode에서 실행 전 실패 |
 | hardened runtime flag 누락 | signing inspection 실패 |
 | initial bundle load timeout | harness exit 3 |
-| renderer↔peer echo timeout/mismatch | harness exit 4 또는 peer non-zero exit |
+| renderer↔peer transport timeout/mismatch | harness exit 4와 bounded stage 또는 peer non-zero exit |
 | replacement process/navigation timeout | harness exit 5 |
 | child signal/crash | `xtask`가 exit status와 log 경로 보고 |
 
@@ -109,7 +110,8 @@ validation 비활성화 entitlement를 추가하지 않는다. 필요성이 발�
 
 - Developer ID notarization/stapling
 - Intel/x86_64와 macOS minor-release matrix
-- Production ring/record handshake와 backpressure를 사용하는 WebKit echo
+- Dropped/duplicate/delayed notification process fault matrix
+- Commit 전후 writer crash와 generation-qualified replacement transport
 - Origin별 binding policy
 
 이 제한은 Phase 7 [지원 매트릭스](support-matrix.md)와 [위협 모델](security.md)에 반영되어

@@ -238,11 +238,21 @@ IOSurface와 Darwin descriptor bundle을 generation에 묶고, peer의 inherited
 
 ### M5 — Production WebKit E2E
 
-- Raw `EchoFrame`/mapping polling을 production protocol/channel transport로 교체
-- Zero/exact/max/fragmented binary payload와 saturation/writable recovery 검증
-- Dropped/duplicate/delayed notification과 polling recovery 검증
-- Commit 전후 writer crash, peer/WebContent kill, reload와 generation replacement 검증
-- Host가 lifecycle과 completion만 관찰하고 payload byte에는 접근하지 않음을 구조적으로 검사
+- [x] Raw `EchoFrame`/mapping polling을 production protocol/channel transport로 교체
+- [x] Zero/exact/max/fragmented binary payload와 saturation/writable recovery 검증
+- [ ] Dropped/duplicate/delayed notification과 polling recovery 검증
+- [ ] Commit 전후 writer crash, peer/WebContent kill, reload와 generation replacement 검증
+- [x] Host가 lifecycle과 completion만 관찰하고 payload byte에는 접근하지 않음을 구조적으로 검사
+
+1차 통합은 facade가 발급한 canonical renderer bootstrap을 host가 opaque property-list 값으로 전달하고,
+injected bundle이 `RendererBootstrap`과 `MacosRendererTransportFactory`로 public transport를 여는 경로다.
+Native peer helper도 `Peer::initialize`와 bootstrap-only stdin을 사용한다. Signed harness는 zero, 16 KiB,
+16 KiB+1, 1 MiB payload 및 high/low watermark recovery를 실제 IOSurface/Darwin-hybrid process에서
+검증하며 AppKit source와 architecture gate는 raw memory/payload frame 의존을 거부한다.
+
+2026-07-22 macOS 26.5.2 (25F84) arm64에서 ad-hoc hardened `cargo xtask webkit-e2e`가 통과했다.
+생성 artifact와 실행 로그 위치는 `target/NWIPC-E2E.app`, `target/webkit-e2e/`다. 이 증거는 아직
+notification fault와 crash/generation matrix를 포함하지 않으므로 M5 완료 선언에는 사용하지 않는다.
 
 완료: Signed/hardened AppKit harness에서 public renderer↔peer 경로가 host relay 없이 통과하고 stale
 message, callback, resource가 새 generation에 전달되지 않는다.
@@ -300,6 +310,7 @@ Operations:
 |---|---|---|---|---|
 | 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
 | M4 public endpoint integration | `nwipc`, `nwipc-macos-transport`, `nwipc-peer` | `public_facade_connects_renderer_and_peer_without_payload_stream`, `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | Rust workspace test | macOS IOSurface + Darwin/hybrid |
+| M5 production WebKit transport (partial) | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` | manual signed E2E | macOS 26.5.2 arm64 ad-hoc; fault/crash matrix pending |
 
 - Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
 - 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.

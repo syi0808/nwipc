@@ -1,5 +1,6 @@
 //! macOS provider factory for the common mapped production channel.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use nwipc_bootstrap_schema::{BootstrapEnvelope, EndpointRole, OpaqueDescriptor, ProviderKind};
@@ -191,6 +192,8 @@ type MacosChannel = ChannelTransport<DarwinSender, DarwinListener>;
 pub struct MacosEndpointTransport {
     channel: MacosChannel,
     high_watermark: u32,
+    pending_inbound: VecDeque<Vec<u8>>,
+    remote_closed: bool,
 }
 
 impl MacosEndpointTransport {
@@ -258,6 +261,8 @@ impl MacosEndpointTransport {
         Ok(Self {
             channel,
             high_watermark: configuration.high_watermark,
+            pending_inbound: VecDeque::new(),
+            remote_closed: false,
         })
     }
 
@@ -266,6 +271,12 @@ impl MacosEndpointTransport {
     }
 
     fn receive_frame(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
+        if let Some(frame) = self.pending_inbound.pop_front() {
+            return Ok(Some(frame));
+        }
+        if self.remote_closed {
+            return Ok(None);
+        }
         loop {
             match self.channel.wait_timeout(Duration::from_millis(64))? {
                 Some(ChannelEvent::Message(frame)) => return Ok(Some(frame)),
@@ -278,7 +289,18 @@ impl MacosEndpointTransport {
 
 impl PortTransport for MacosEndpointTransport {
     fn send(&mut self, frame: &[u8]) -> Result<(), ErrorReport> {
-        self.send_frame(frame).map(|_| ())
+        match self.send_frame(frame) {
+            Ok(_) => Ok(()),
+            Err(error) if error.code() == ErrorCode::Backpressured => {
+                match self.channel.poll()? {
+                    Some(ChannelEvent::Message(frame)) => self.pending_inbound.push_back(frame),
+                    Some(ChannelEvent::Closed | ChannelEvent::Reset) => self.remote_closed = true,
+                    Some(ChannelEvent::Writable | ChannelEvent::Control(_)) | None => {}
+                }
+                Err(error)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {

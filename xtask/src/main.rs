@@ -9,11 +9,7 @@ use nwipc_channel_core::{ChannelEvent, in_process_channel};
 use nwipc_error::ErrorCode;
 
 #[cfg(target_os = "macos")]
-use nwipc_memory_api::SharedMemoryProvider;
-#[cfg(target_os = "macos")]
-use nwipc_memory_iosurface::IoSurfaceProvider;
-#[cfg(target_os = "macos")]
-use nwipc_types::Generation;
+use std::io::Write;
 
 const UNSAFE_CRATES: &[&str] = &[
     "nwipc-atomic",
@@ -30,7 +26,7 @@ const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/signal/nwipc-signal-darwin", 5),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
-    ("crates/platform/macos/nwipc-macos-bundle-shim", 7),
+    ("crates/platform/macos/nwipc-macos-bundle-shim", 9),
 ];
 
 fn main() -> ExitCode {
@@ -293,6 +289,26 @@ fn architecture_check() -> Result<(), String> {
         }
     }
 
+    let bundle_shim_manifest =
+        read(&root.join("crates/platform/macos/nwipc-macos-bundle-shim/Cargo.toml"))?;
+    if !bundle_shim_manifest.contains("nwipc-macos-transport.workspace = true")
+        || bundle_shim_manifest.contains("nwipc-memory-iosurface")
+        || bundle_shim_manifest.contains("nwipc-memory-api")
+    {
+        violations.push(
+            "nwipc-macos-bundle-shim: WebKit production path must use macOS transport without raw memory access"
+                .into(),
+        );
+    }
+    let appkit_harness = read(&root.join("native/macos/appkit/main.m"))?;
+    for forbidden in ["IOSurface", "EchoFrame", "ECHO_PAYLOAD", "MappedRegion"] {
+        if appkit_harness.contains(forbidden) {
+            violations.push(format!(
+                "native AppKit host: payload-path token `{forbidden}` is forbidden"
+            ));
+        }
+    }
+
     if violations.is_empty() {
         println!("architecture-check: ok");
         Ok(())
@@ -480,21 +496,35 @@ fn sign_e2e_artifacts(root: &Path, artifacts: &E2eArtifacts, identity: &str) -> 
 
 #[cfg(target_os = "macos")]
 fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Result<(), String> {
-    let provider = IoSurfaceProvider::initialize().map_err(|error| error.to_string())?;
-    let generation = Generation::new(nwipc_webkit_testkit::ECHO_GENERATION)
-        .ok_or("invalid WebKit E2E generation")?;
-    let (_host_mapping, descriptor) = provider
-        .create(nwipc_webkit_testkit::ECHO_REGION_LENGTH, generation)
+    let mut nwipc = nwipc::Nwipc::initialize().map_err(|error| error.to_string())?;
+    let mut session = nwipc.create_session().map_err(|error| error.to_string())?;
+    let mut renderer_bootstrap = Vec::new();
+    session
+        .write_renderer_bootstrap(&mut renderer_bootstrap)
         .map_err(|error| error.to_string())?;
-    let descriptor = encode_hex(&descriptor.encode().map_err(|error| error.to_string())?);
+    let renderer_bootstrap = encode_hex(&renderer_bootstrap);
     let process_id = std::process::id();
-    let mut peer = Command::new(&artifacts.peer_executable)
-        .env(nwipc_webkit_testkit::ECHO_DESCRIPTOR_ENV, &descriptor)
-        .env("NWIPC_E2E_TIMEOUT_SECONDS", timeout.to_string())
+    let mut peer_command = Command::new(&artifacts.peer_executable);
+    peer_command
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    session.peer_environment().apply(&mut peer_command);
+    let mut peer = peer_command
         .spawn()
         .map_err(|error| format!("launch native-peer E2E helper: {error}"))?;
+    session
+        .write_peer_bootstrap(
+            peer.stdin
+                .as_mut()
+                .ok_or("native-peer bootstrap stdin is unavailable")?,
+        )
+        .map_err(|error| error.to_string())?;
+    peer.stdin
+        .take()
+        .ok_or("native-peer bootstrap stdin is unavailable")?
+        .flush()
+        .map_err(|error| format!("flush native-peer bootstrap: {error}"))?;
     let output = Command::new(&artifacts.app_executable)
         .env("NWIPC_WEBKIT_E2E", "1")
         .env(
@@ -502,10 +532,13 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
             format!("dev.nwipc.webkit-e2e.bundle-loaded.{process_id}"),
         )
         .env(
-            nwipc_webkit_testkit::ECHO_NOTIFICATION_ENV,
-            format!("dev.nwipc.webkit-e2e.binary-echo.{process_id}"),
+            nwipc_webkit_testkit::TRANSPORT_NOTIFICATION_ENV,
+            format!("dev.nwipc.webkit-e2e.transport.{process_id}"),
         )
-        .env(nwipc_webkit_testkit::ECHO_DESCRIPTOR_ENV, &descriptor)
+        .env(
+            nwipc_webkit_testkit::RENDERER_BOOTSTRAP_ENV,
+            &renderer_bootstrap,
+        )
         .env("NWIPC_E2E_TIMEOUT_SECONDS", timeout.to_string())
         .arg(&artifacts.embedded_bundle)
         .arg(timeout.to_string())
@@ -540,7 +573,7 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
         .map_err(|error| format!("wait native-peer E2E helper: {error}"))?;
     write_peer_logs(work, &peer_output)?;
     if !peer_output.status.success()
-        || !String::from_utf8_lossy(&peer_output.stdout).contains("binary-echo=ok")
+        || !String::from_utf8_lossy(&peer_output.stdout).contains("production-transport=ok")
     {
         return Err(format!(
             "native-peer E2E helper failed with {}; logs: {}",
@@ -550,6 +583,7 @@ fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Res
     }
     nwipc_webkit_testkit::WebKitE2eReport::parse(&String::from_utf8_lossy(&output.stdout))
         .map_err(|error| error.to_string())?;
+    nwipc.close(&session).map_err(|error| error.to_string())?;
     print_output(&output);
     Ok(())
 }

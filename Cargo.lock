@@ -6,6 +6,7 @@ version = 4
 name = "nwipc"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-codec",
  "nwipc-bootstrap-schema",
  "nwipc-capabilities",
  "nwipc-diagnostics",
@@ -180,11 +181,12 @@ dependencies = [
 name = "nwipc-macos-bundle-shim"
 version = "0.0.0"
 dependencies = [
+ "nwipc-bootstrap-codec",
  "nwipc-error",
  "nwipc-macos-bundle-api",
- "nwipc-memory-api",
- "nwipc-memory-iosurface",
- "nwipc-types",
+ "nwipc-macos-transport",
+ "nwipc-renderer-api",
+ "nwipc-renderer-bootstrap",
  "nwipc-webkit-testkit",
 ]
 
@@ -257,13 +259,10 @@ name = "nwipc-native-peer-example"
 version = "0.0.0"
 dependencies = [
  "nwipc",
- "nwipc-memory-api",
- "nwipc-memory-iosurface",
  "nwipc-peer",
  "nwipc-process-testkit",
  "nwipc-renderer-api",
  "nwipc-types",
- "nwipc-webkit-testkit",
 ]
 
 [[package]]
@@ -521,11 +520,9 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "nwipc",
  "nwipc-channel-core",
  "nwipc-error",
  "nwipc-macos-artifact",
- "nwipc-memory-api",
- "nwipc-memory-iosurface",
- "nwipc-types",
  "nwipc-webkit-testkit",
 ]

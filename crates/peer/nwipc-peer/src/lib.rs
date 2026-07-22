@@ -120,7 +120,15 @@ impl Peer {
     pub fn run_echo(&mut self) -> Result<(), ErrorReport> {
         loop {
             match self.try_receive()? {
-                Some(PortEvent::Message(payload)) => self.try_send(&payload)?,
+                Some(PortEvent::Message(payload)) => loop {
+                    match self.try_send(&payload) {
+                        Ok(()) => break,
+                        Err(error) if error.code() == ErrorCode::Backpressured => {
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                        Err(error) => return Err(error),
+                    }
+                },
                 Some(PortEvent::Closed) => return Ok(()),
                 None => continue,
             }

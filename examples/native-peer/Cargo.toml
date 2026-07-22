@@ -8,16 +8,13 @@ publish = false
 default-run = "nwipc-native-peer-example"
 
 [dependencies]
-nwipc-memory-api.workspace = true
-nwipc-memory-iosurface.workspace = true
 nwipc-peer = { version = "=0.0.0", path = "../../crates/peer/nwipc-peer" }
-nwipc-types.workspace = true
-nwipc-webkit-testkit.workspace = true
 
 [dev-dependencies]
 nwipc = { path = "../../crates/facade/nwipc" }
 nwipc-process-testkit = { path = "../../crates/testing/nwipc-process-testkit" }
 nwipc-renderer-api.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

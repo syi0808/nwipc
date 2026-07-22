@@ -32,10 +32,10 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 
 ## 알려진 제한
 
-- Data-plane fragmentation은 지원하지만 production WebKit handshake 연결은 아직 없다.
+- Data-plane fragmentation은 production WebKit handshake와 signed boundary matrix에 연결됐다.
 - Record inline payload 상한은 1 MiB이고 논리 메시지 상한은 채널 생성 시 ring 범위 안에서 설정한다.
 - Encryption/authentication, async API, reconnect policy는 아직 없다.
-- Production ring/record handshake를 사용하는 WebKit echo와 origin별 binding policy는 아직 없다.
+- Production WebKit notification/crash fault matrix와 origin별 binding policy는 아직 없다.
 - Developer ID notarization/stapling과 macOS minor-release/x86_64 matrix는 아직 없다.
 - Benchmark 수치는 machine-specific baseline이며 회귀 임계값으로 사용하기 전에 같은 runner에서
   반복 측정해야 한다.
