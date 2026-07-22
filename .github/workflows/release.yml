@@ -1,0 +1,69 @@
+name: Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      signed_e2e:
+        description: Run trusted-identity WebKit E2E on the signing runner
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  cross-architecture:
+    name: Fixtures and providers (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+      - run: test "$(uname -m)" = "${{ matrix.arch }}"
+      - run: rustup show active-toolchain
+      - name: Cross-architecture fixtures and diagnostics
+        run: >-
+          cargo test
+          -p nwipc-layout -p nwipc-record -p nwipc-protocol
+          -p nwipc-bootstrap-codec -p nwipc-validation
+          -p nwipc-diagnostics -p nwipc-metrics
+      - name: Actual-provider contracts
+        run: >-
+          cargo test
+          -p nwipc-memory-iosurface -p nwipc-signal-darwin
+          -p nwipc-signal-hybrid -p nwipc-channel-transport
+      - name: Actual-provider benchmark
+        run: |
+          mkdir -p target/release-gate
+          cargo test --release -p nwipc-macos-transport \
+            --test actual_provider_benchmark -- --ignored --nocapture \
+            | tee "target/release-gate/actual-provider-${{ matrix.arch }}.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-provider-${{ matrix.arch }}
+          path: target/release-gate/*.log
+
+  signed-webkit-e2e:
+    if: inputs.signed_e2e
+    runs-on: [self-hosted, macOS, ARM64, nwipc-signing]
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - name: Trusted signed/hardened process matrix
+        env:
+          NWIPC_CODESIGN_IDENTITY: ${{ secrets.NWIPC_CODESIGN_IDENTITY }}
+          NWIPC_REQUIRE_TRUSTED_SIGNING: "1"
+        run: cargo xtask webkit-e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: signed-webkit-e2e
+          path: target/webkit-e2e/
+

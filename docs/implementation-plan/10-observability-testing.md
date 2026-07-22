@@ -104,3 +104,7 @@ Threat model상 인증 없는 공유 region이 허용 불가능하면 crypto를 
 `cargo xtask hardening-check`는 architecture 규칙, unsafe 감사 기준선, 필수 hardening 산출물을
 한 번에 검증한다. 실제 WebKit/IOSurface 경계는 portable sanitizer의 범위가 아니므로 signed
 hardened process E2E와 함께 판단한다.
+
+M6에서 확정한 공개 필드, redaction, reader compatibility는
+[`diagnostics-schema.md`](../diagnostics-schema.md), 동일 commit에 요구하는 architecture/provider/signed
+process gate는 [`release-gate.md`](../release-gate.md)를 따른다.

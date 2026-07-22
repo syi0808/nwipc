@@ -26,7 +26,7 @@ const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/signal/nwipc-signal-darwin", 5),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
-    ("crates/platform/macos/nwipc-macos-bundle-shim", 9),
+    ("crates/platform/macos/nwipc-macos-bundle-shim", 11),
 ];
 
 fn main() -> ExitCode {
@@ -95,6 +95,8 @@ fn hardening_check() -> Result<(), String> {
     for required in [
         "docs/security.md",
         "docs/support-matrix.md",
+        "docs/diagnostics-schema.md",
+        "docs/release-gate.md",
         "fuzz/Cargo.toml",
         "fuzz/fuzz_targets/record.rs",
         "fuzz/fuzz_targets/bootstrap.rs",

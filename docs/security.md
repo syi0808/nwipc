@@ -40,7 +40,7 @@ Safe crate에서 unsafe token을 쓰는 것은 `architecture-check`가 차단한
 | `nwipc-signal-darwin` | 5 | NUL-terminated names, valid notify token, cancel-after-registration |
 | `nwipc-renderer-jsc` | 76 | live JSC context, callback panic containment, protect/unprotect pairing, typed-array copy-before-return |
 | `nwipc-macos-spi` | 4 | non-null Objective-C class/selector/method probe before invocation |
-| `nwipc-macos-bundle-shim` | 9 | ABI entry panic containment, WebKit object lifetime, checked callback arguments and E2E notify state |
+| `nwipc-macos-bundle-shim` | 11 | ABI entry panic containment, WebKit object lifetime, checked callback arguments, checked notify state registration/read/cancel |
 
 감사 범위는 `src/**/*.rs`이며 test-only JSC FFI도 포함한다. 공개 unsafe 함수는 `# Safety` 계약을
 제공하고, 각 dereference/FFI 묶음의 전제는 해당 low-level crate에서 유지한다.

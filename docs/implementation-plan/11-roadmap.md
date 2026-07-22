@@ -145,15 +145,15 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record, protocol, validation | E2E 검증 | M6 release diagnostics schema 확정 |
-| Ring, flow, channel, fragmentation | E2E 검증 | M6 counter와 cross-architecture release gate |
-| IOSurface, Darwin, polling/hybrid | E2E 검증 | Trusted identity와 x86_64 matrix |
-| Bootstrap schema/codec | E2E 검증 | M6 release compatibility 규칙 확정 |
-| Peer core/facade | E2E 검증 | M6 failure diagnostics 확정 |
-| Session, session machine, runtime | E2E 검증 | M6 lifecycle snapshot 확정 |
+| Domain, layout, record, protocol, validation | E2E 검증 | M6 cross-architecture release run |
+| Ring, flow, channel, fragmentation | E2E 검증 | M6 cross-architecture release run |
+| IOSurface, Darwin, polling/hybrid | E2E 검증 | Trusted identity와 x86_64 release run |
+| Bootstrap schema/codec | E2E 검증 | M6 cross-architecture release run |
+| Peer core/facade | E2E 검증 | M6 failure matrix release run |
+| Session, session machine, runtime | E2E 검증 | M6 lifecycle snapshot release run |
 | Renderer core, JSC, WebKit control plane | E2E 검증 | Origin별 binding policy |
 | WebKit process smoke | E2E 검증 | Trusted identity와 지원 OS matrix 확대 |
-| Diagnostics, metrics, top-level facade | Production 통합 | M6 failure/wakeup 세부 counter와 release schema 확정 |
+| Diagnostics, metrics, top-level facade | Production 통합 | M6 remote release gate evidence |
 
 독립 provider와 signed WebKit smoke는 실제 환경 가능성을 검증했지만 전체 product call graph의 완료를
 의미하지 않는다. 다음 milestone은 새로운 provider나 framework 확장보다 production 경로 폐쇄를 우선한다.
@@ -270,6 +270,11 @@ message, callback, resource가 새 generation에 전달되지 않는다.
 완료: Failure matrix의 각 case에서 diagnostics만으로 backend/state/stable error/cleanup 결과를 식별할 수
 있고 전체 release gate가 통과한다.
 
+구현 artifact는 diagnostics schema v2, generation history/failure/cleanup snapshot, provider wakeup 집계,
+arm64/x86_64 actual-provider benchmark job, trusted-signing 전용 job이다. Compatibility와 redaction 규칙은
+`docs/diagnostics-schema.md`, 동일 commit release 조건은 `docs/release-gate.md`에 고정했다. 위 체크는
+`CI`, `Hardening`, `Release Gate(signed_e2e=true)`가 같은 commit에서 통과한 뒤 갱신한다.
+
 ## Vertical slice 완료 정의
 
 Foundation:
@@ -314,6 +319,7 @@ Operations:
 | 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
 | M4 public endpoint integration | `nwipc`, `nwipc-macos-transport`, `nwipc-peer` | `public_facade_connects_renderer_and_peer_without_payload_stream`, `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | Rust workspace test | macOS IOSurface + Darwin/hybrid |
 | M5 production WebKit E2E | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` notification/writer/peer/replacement matrix | manual signed E2E | macOS 26.5.2 arm64 ad-hoc; trusted identity와 x86_64는 미검증 |
+| M6 release candidate | `nwipc-diagnostics` schema v2, facade generation history, provider metrics | diagnostics/failure contract, actual-provider benchmark, cross-architecture fixtures | `CI`, `Hardening`, `Release Gate` | macOS 15 arm64/x86_64 provider gate; WebKit release는 trusted macOS 26.5.2 arm64 runner |
 
 - Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
 - 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.
