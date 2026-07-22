@@ -7,7 +7,7 @@
 code signing, process replacement 경계를 대상으로 한다.
 
 이 검증은 payload를 host가 중계하지 않는다는 구조를 유지한다. Host harness가 관찰하는 것은
-navigation/lifecycle과 bundle load notification뿐이며 payload byte는 받지 않는다.
+navigation/lifecycle, bundle load, echo completion notification뿐이며 payload byte는 받지 않는다.
 
 ## 검증 단계
 
@@ -28,6 +28,7 @@ navigation/lifecycle과 bundle load notification뿐이며 payload byte는 받지
 - App과 bundle을 ad-hoc identity(`-`) 및 `--options runtime`으로 서명
 - `codesign --verify --strict`와 hardened runtime flag 검사
 - 실제 `WKWebView` navigation과 `WebContent` injected-bundle load 확인
+- Signed native-peer helper와 `WebContent` 사이의 직접 `IOSurface` binary echo 확인
 - `WebContent` 강제 종료 후 새 process identity와 navigation 확인
 
 로컬 기본 모드다. Hardened runtime과 nested-code 구조는 검증하지만 Team ID와 배포 인증서
@@ -63,8 +64,10 @@ cargo xtask webkit-e2e
 2. `target/NWIPC.bundle`을 assemble하고 manifest/layout을 검사한다.
 3. Objective-C AppKit E2E harness를 컴파일하고 `target/NWIPC-E2E.app`을 조립한다.
 4. Nested bundle을 먼저, outer app을 나중에 hardened runtime으로 서명한다.
-5. 서명 구조, runtime flag, `WKBundleInitialize` export를 검사한다.
-6. App executable을 직접 실행하고 initial bundle marker와 process replacement를 기다린다.
+5. Native-peer helper를 hardened runtime으로 서명하고 outer app의 nested code로 봉인한다.
+6. 서명 구조, runtime flag, entitlement, `WKBundleInitialize` export를 검사한다.
+7. Host가 `IOSurface` descriptor를 renderer와 peer에 전달하고 payload path에서는 빠진다.
+8. App executable과 peer helper를 실행해 binary echo, initial bundle marker, process replacement를 기다린다.
 
 생성물과 child stdout/stderr는 `target/webkit-e2e/`에 보존한다. 제한 시간은
 `NWIPC_E2E_TIMEOUT_SECONDS`로 조정하며 기본값은 20초다.
@@ -73,9 +76,12 @@ cargo xtask webkit-e2e
 
 - App과 injected bundle 모두 `codesign --verify --strict`를 통과한다.
 - App과 injected bundle 모두 hardened runtime flag를 가진다.
+- Native-peer helper도 hardened runtime으로 서명되고 outer app signature에 봉인된다.
 - JIT, unsigned executable memory, library validation 해제, debugger entitlement가 없다.
 - App harness가 required SPI class/selector를 모두 확인한다.
 - 첫 navigation에서 bundle load marker를 한 번 관찰한다.
+- Renderer가 `[0x00, 0x01, 0xff, 0x02, ...]` payload를 쓰고 peer가 동일 bytes를 echo한다.
+- Echo 동안 host harness와 `xtask`는 payload bytes를 읽거나 복사하지 않는다.
 - `_killWebContentProcessAndResetState` 뒤 process ID가 바뀌고 새 navigation이 완료된다.
 - App harness가 제한 시간 안에 exit code 0으로 종료한다.
 
@@ -89,7 +95,8 @@ cargo xtask webkit-e2e
 | signing identity 없음 | trusted mode에서 실행 전 실패 |
 | hardened runtime flag 누락 | signing inspection 실패 |
 | initial bundle load timeout | harness exit 3 |
-| replacement process/navigation timeout | harness exit 4 |
+| renderer↔peer echo timeout/mismatch | harness exit 4 또는 peer non-zero exit |
+| replacement process/navigation timeout | harness exit 5 |
 | child signal/crash | `xtask`가 exit status와 log 경로 보고 |
 
 ## Entitlement 정책
@@ -102,7 +109,7 @@ validation 비활성화 entitlement를 추가하지 않는다. 필요성이 발�
 
 - Developer ID notarization/stapling
 - Intel/x86_64와 macOS minor-release matrix
-- 실제 renderer↔native-peer binary echo와 backpressure
+- Production ring/record handshake와 backpressure를 사용하는 WebKit echo
 - Origin별 binding policy
 
 이 항목은 Tier 2 process smoke가 안정화된 뒤 Phase 7 hardening matrix에서 확장한다.

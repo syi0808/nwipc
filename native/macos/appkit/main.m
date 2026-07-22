@@ -7,6 +7,7 @@
 #include <string.h>
 
 static const char *NotificationPrefix = "dev.nwipc.webkit-e2e.bundle-loaded.";
+static const char *EchoNotificationPrefix = "dev.nwipc.webkit-e2e.binary-echo.";
 
 @interface NavigationObserver : NSObject <WKNavigationDelegate>
 @property(nonatomic) NSUInteger finishes;
@@ -55,6 +56,16 @@ static void SendVoid(id target, const char *selectorName) {
     ((void (*)(id, SEL))objc_msgSend)(target, sel_registerName(selectorName));
 }
 
+static BOOL SetBundleParameter(id processPool, NSString *key, const char *environment) {
+    const char *value = getenv(environment);
+    if (value == NULL) {
+        return NO;
+    }
+    SendVoidIdId(processPool, "_setObject:forBundleParameter:",
+                 [NSString stringWithUTF8String:value], key);
+    return YES;
+}
+
 static pid_t WebProcessIdentifier(WKWebView *webView) {
     return ((pid_t (*)(id, SEL))objc_msgSend)(webView, sel_registerName("_webProcessIdentifier"));
 }
@@ -95,6 +106,19 @@ static BOOL WaitForReplacement(NSUInteger expectedFinishes, pid_t previousPID, W
     return NO;
 }
 
+static BOOL WaitForNotification(int notificationToken, NSTimeInterval timeout) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    while ([deadline timeIntervalSinceNow] > 0) {
+        int changed = 0;
+        if (notify_check(notificationToken, &changed) == NOTIFY_STATUS_OK && changed != 0) {
+            return YES;
+        }
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    return NO;
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc != 3) {
@@ -126,11 +150,35 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "failed: could not register bundle load marker\n");
             return 70;
         }
+        int initialNotificationState = 0;
+        notify_check(notificationToken, &initialNotificationState);
+        const char *echoNotification = getenv("NWIPC_WEBKIT_E2E_ECHO_NOTIFICATION");
+        if (echoNotification == NULL || strncmp(echoNotification, EchoNotificationPrefix, strlen(EchoNotificationPrefix)) != 0) {
+            fprintf(stderr, "failed: invalid binary echo marker name\n");
+            notify_cancel(notificationToken);
+            return 64;
+        }
+        int echoNotificationToken = 0;
+        if (notify_register_check(echoNotification, &echoNotificationToken) != NOTIFY_STATUS_OK) {
+            fprintf(stderr, "failed: could not register binary echo marker\n");
+            notify_cancel(notificationToken);
+            return 70;
+        }
+        notify_check(echoNotificationToken, &initialNotificationState);
 
         id privateConfiguration = SendId(privateConfigurationClass, "new");
         SendVoidId(privateConfiguration, "setInjectedBundleURL:", [NSURL fileURLWithPath:bundlePath]);
         id processPool = SendIdId(SendId(processPoolClass, "alloc"), "_initWithConfiguration:", privateConfiguration);
-        SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"enabled", @"nwipc-e2e");
+        SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"1", @"nwipc.e2e.enabled");
+        if (!SetBundleParameter(processPool, @"nwipc.e2e.iosurface", "NWIPC_WEBKIT_E2E_IOSURFACE") ||
+            !SetBundleParameter(processPool, @"nwipc.e2e.load-notification", "NWIPC_WEBKIT_E2E_NOTIFICATION") ||
+            !SetBundleParameter(processPool, @"nwipc.e2e.echo-notification", "NWIPC_WEBKIT_E2E_ECHO_NOTIFICATION") ||
+            !SetBundleParameter(processPool, @"nwipc.e2e.timeout", "NWIPC_E2E_TIMEOUT_SECONDS")) {
+            fprintf(stderr, "failed: missing E2E bundle parameter\n");
+            notify_cancel(notificationToken);
+            notify_cancel(echoNotificationToken);
+            return 64;
+        }
 
         WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
         SendVoidId(configuration, "setProcessPool:", processPool);
@@ -152,7 +200,14 @@ int main(int argc, const char *argv[]) {
                     (unsigned long)observer.finishes,
                     observer.failure.localizedDescription.UTF8String ?: "none");
             notify_cancel(notificationToken);
+            notify_cancel(echoNotificationToken);
             return 3;
+        }
+        if (!WaitForNotification(echoNotificationToken, timeout)) {
+            fprintf(stderr, "timeout: renderer to native-peer binary echo\n");
+            notify_cancel(notificationToken);
+            notify_cancel(echoNotificationToken);
+            return 4;
         }
         pid_t initialPID = WebProcessIdentifier(webView);
 
@@ -166,11 +221,13 @@ int main(int argc, const char *argv[]) {
                     WebProcessIdentifier(webView),
                     observer.failure.localizedDescription.UTF8String ?: "none");
             notify_cancel(notificationToken);
-            return 4;
+            notify_cancel(echoNotificationToken);
+            return 5;
         }
 
         notify_cancel(notificationToken);
-        printf("webkit-e2e: initial-load=ok replacement-process=ok hardened-process=ok\n");
+        notify_cancel(echoNotificationToken);
+        printf("webkit-e2e: initial-load=ok binary-echo=ok replacement-process=ok hardened-process=ok\n");
         return 0;
     }
 }

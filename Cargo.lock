@@ -131,6 +131,10 @@ version = "0.0.0"
 dependencies = [
  "nwipc-error",
  "nwipc-macos-bundle-api",
+ "nwipc-memory-api",
+ "nwipc-memory-iosurface",
+ "nwipc-types",
+ "nwipc-webkit-testkit",
 ]
 
 [[package]]
@@ -181,9 +185,12 @@ dependencies = [
 name = "nwipc-native-peer-example"
 version = "0.0.0"
 dependencies = [
+ "nwipc-memory-api",
+ "nwipc-memory-iosurface",
  "nwipc-peer",
  "nwipc-process-testkit",
  "nwipc-types",
+ "nwipc-webkit-testkit",
 ]
 
 [[package]]
@@ -421,5 +428,8 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "nwipc-macos-artifact",
+ "nwipc-memory-api",
+ "nwipc-memory-iosurface",
+ "nwipc-types",
  "nwipc-webkit-testkit",
 ]

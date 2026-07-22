@@ -5,13 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+default-run = "nwipc-native-peer-example"
 
 [dependencies]
+nwipc-memory-api.workspace = true
+nwipc-memory-iosurface.workspace = true
 nwipc-peer = { version = "=0.0.0", path = "../../crates/peer/nwipc-peer" }
+nwipc-types.workspace = true
+nwipc-webkit-testkit.workspace = true
 
 [dev-dependencies]
 nwipc-process-testkit = { path = "../../crates/testing/nwipc-process-testkit" }
-nwipc-types.workspace = true
 
 [lints]
 workspace = true

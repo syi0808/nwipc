@@ -19,7 +19,8 @@ corepack pnpm typecheck
 corepack pnpm test
 ```
 
-On an allowlisted macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke:
+On an allowlisted macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke,
+including direct renderer↔native-peer `IOSurface` binary echo:
 
 ```sh
 cargo xtask webkit-e2e

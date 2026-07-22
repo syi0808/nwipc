@@ -4,6 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
 
+#[cfg(target_os = "macos")]
+use nwipc_memory_api::SharedMemoryProvider;
+#[cfg(target_os = "macos")]
+use nwipc_memory_iosurface::IoSurfaceProvider;
+#[cfg(target_os = "macos")]
+use nwipc_types::Generation;
+
 const UNSAFE_CRATES: &[&str] = &[
     "nwipc-atomic",
     "nwipc-memory-iosurface",
@@ -185,34 +192,64 @@ fn webkit_e2e() -> Result<(), String> {
     let root = workspace_root()?;
     let target = root.join("target");
     let work = target.join("webkit-e2e");
-    let app = target.join("NWIPC-E2E.app");
-    let app_contents = app.join("Contents");
-    let app_executable = app_contents.join("MacOS/nwipc-webkit-e2e");
-    let embedded_bundle = app_contents.join("PlugIns/NWIPC.bundle");
-    let bundle_executable = embedded_bundle
-        .join("Contents/MacOS")
-        .join(nwipc_macos_artifact::BUNDLE_EXECUTABLE);
     let (identity, timeout) = e2e_environment()?;
-
     recreate_directory(&work)?;
+    let artifacts = prepare_e2e_artifacts(&root, &target, &work)?;
+    sign_e2e_artifacts(&root, &artifacts, &identity)?;
+    run_e2e_processes(&artifacts, &work, timeout)?;
+    println!(
+        "webkit-e2e: ok signing={} app={} logs={}",
+        if identity == "-" { "ad-hoc" } else { "trusted" },
+        artifacts.app.display(),
+        work.display()
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+struct E2eArtifacts {
+    app: PathBuf,
+    app_executable: PathBuf,
+    peer_executable: PathBuf,
+    embedded_bundle: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_e2e_artifacts(root: &Path, target: &Path, work: &Path) -> Result<E2eArtifacts, String> {
+    let app = target.join("NWIPC-E2E.app");
     if app.exists() {
         fs::remove_dir_all(&app).map_err(|error| error.to_string())?;
     }
-
+    let app_contents = app.join("Contents");
+    let artifacts = E2eArtifacts {
+        app,
+        app_executable: app_contents.join("MacOS/nwipc-webkit-e2e"),
+        peer_executable: app_contents.join("Helpers/nwipc-webkit-e2e-peer"),
+        embedded_bundle: app_contents.join("PlugIns/NWIPC.bundle"),
+    };
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     run_checked(
-        Command::new(cargo)
-            .current_dir(&root)
+        Command::new(&cargo)
+            .current_dir(root)
             .args(["build", "-p", "nwipc-macos-bundle-shim"]),
         "build injected bundle shim",
     )?;
+    run_checked(
+        Command::new(cargo).current_dir(root).args([
+            "build",
+            "-p",
+            "nwipc-native-peer-example",
+            "--bin",
+            "nwipc-webkit-e2e-peer",
+        ]),
+        "build native-peer E2E helper",
+    )?;
     let shim = target.join("debug/libnwipc_macos_bundle_shim.dylib");
     bundle_assemble(Some(shim.to_string_lossy().into_owned()))?;
-
     let harness = work.join("nwipc-webkit-e2e");
     run_checked(
         Command::new("/usr/bin/xcrun")
-            .current_dir(&root)
+            .current_dir(root)
             .args([
                 "clang",
                 "-fobjc-arc",
@@ -227,57 +264,137 @@ fn webkit_e2e() -> Result<(), String> {
             .arg(&harness),
         "compile AppKit WebKit harness",
     )?;
-
     fs::create_dir_all(app_contents.join("MacOS")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(app_contents.join("Helpers")).map_err(|error| error.to_string())?;
     fs::create_dir_all(app_contents.join("PlugIns")).map_err(|error| error.to_string())?;
-    fs::copy(&harness, &app_executable).map_err(|error| error.to_string())?;
+    fs::copy(&harness, &artifacts.app_executable).map_err(|error| error.to_string())?;
+    fs::copy(
+        target.join("debug/nwipc-webkit-e2e-peer"),
+        &artifacts.peer_executable,
+    )
+    .map_err(|error| error.to_string())?;
     fs::copy(
         root.join("native/macos/appkit/Info.plist"),
         app_contents.join("Info.plist"),
     )
     .map_err(|error| error.to_string())?;
-    copy_tree(&target.join("NWIPC.bundle"), &embedded_bundle)?;
+    copy_tree(&target.join("NWIPC.bundle"), &artifacts.embedded_bundle)?;
+    Ok(artifacts)
+}
 
+#[cfg(target_os = "macos")]
+fn sign_e2e_artifacts(root: &Path, artifacts: &E2eArtifacts, identity: &str) -> Result<(), String> {
+    let bundle_executable = artifacts
+        .embedded_bundle
+        .join("Contents/MacOS")
+        .join(nwipc_macos_artifact::BUNDLE_EXECUTABLE);
     require_export(&bundle_executable, "_WKBundleInitialize")?;
     let entitlements = root.join("native/macos/entitlements/nwipc-example.entitlements");
-    sign(&embedded_bundle, &identity, &entitlements)?;
-    sign(&app, &identity, &entitlements)?;
-    verify_signature(&embedded_bundle)?;
-    verify_signature(&app)?;
-    require_hardened_runtime(&embedded_bundle)?;
-    require_hardened_runtime(&app)?;
-    require_restricted_entitlements(&embedded_bundle)?;
-    require_restricted_entitlements(&app)?;
+    sign(&artifacts.peer_executable, identity, &entitlements)?;
+    sign(&artifacts.embedded_bundle, identity, &entitlements)?;
+    sign(&artifacts.app, identity, &entitlements)?;
+    for artifact in [
+        &artifacts.peer_executable,
+        &artifacts.embedded_bundle,
+        &artifacts.app,
+    ] {
+        verify_signature(artifact)?;
+        require_hardened_runtime(artifact)?;
+        require_restricted_entitlements(artifact)?;
+    }
+    Ok(())
+}
 
-    let output = Command::new(&app_executable)
+#[cfg(target_os = "macos")]
+fn run_e2e_processes(artifacts: &E2eArtifacts, work: &Path, timeout: u64) -> Result<(), String> {
+    let provider = IoSurfaceProvider::initialize().map_err(|error| error.to_string())?;
+    let generation = Generation::new(nwipc_webkit_testkit::ECHO_GENERATION)
+        .ok_or("invalid WebKit E2E generation")?;
+    let (_host_mapping, descriptor) = provider
+        .create(nwipc_webkit_testkit::ECHO_REGION_LENGTH, generation)
+        .map_err(|error| error.to_string())?;
+    let descriptor = encode_hex(&descriptor.encode().map_err(|error| error.to_string())?);
+    let process_id = std::process::id();
+    let mut peer = Command::new(&artifacts.peer_executable)
+        .env(nwipc_webkit_testkit::ECHO_DESCRIPTOR_ENV, &descriptor)
+        .env("NWIPC_E2E_TIMEOUT_SECONDS", timeout.to_string())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("launch native-peer E2E helper: {error}"))?;
+    let output = Command::new(&artifacts.app_executable)
         .env("NWIPC_WEBKIT_E2E", "1")
         .env(
             "NWIPC_WEBKIT_E2E_NOTIFICATION",
-            format!("dev.nwipc.webkit-e2e.bundle-loaded.{}", std::process::id()),
+            format!("dev.nwipc.webkit-e2e.bundle-loaded.{process_id}"),
         )
-        .arg(&embedded_bundle)
+        .env(
+            nwipc_webkit_testkit::ECHO_NOTIFICATION_ENV,
+            format!("dev.nwipc.webkit-e2e.binary-echo.{process_id}"),
+        )
+        .env(nwipc_webkit_testkit::ECHO_DESCRIPTOR_ENV, &descriptor)
+        .env("NWIPC_E2E_TIMEOUT_SECONDS", timeout.to_string())
+        .arg(&artifacts.embedded_bundle)
         .arg(timeout.to_string())
-        .output()
-        .map_err(|error| format!("launch WebKit E2E harness: {error}"))?;
+        .output();
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = peer.kill();
+            let peer_output = peer
+                .wait_with_output()
+                .map_err(|wait_error| format!("reap native-peer E2E helper: {wait_error}"))?;
+            write_peer_logs(work, &peer_output)?;
+            return Err(format!("launch WebKit E2E harness: {error}"));
+        }
+    };
     fs::write(work.join("stdout.log"), &output.stdout).map_err(|error| error.to_string())?;
     fs::write(work.join("stderr.log"), &output.stderr).map_err(|error| error.to_string())?;
     if !output.status.success() {
+        let _ = peer.kill();
+        let peer_output = peer
+            .wait_with_output()
+            .map_err(|error| format!("reap native-peer E2E helper: {error}"))?;
+        write_peer_logs(work, &peer_output)?;
         return Err(format!(
             "WebKit E2E harness failed with {}; logs: {}",
             output.status,
             work.display()
         ));
     }
+    let peer_output = peer
+        .wait_with_output()
+        .map_err(|error| format!("wait native-peer E2E helper: {error}"))?;
+    write_peer_logs(work, &peer_output)?;
+    if !peer_output.status.success()
+        || !String::from_utf8_lossy(&peer_output.stdout).contains("binary-echo=ok")
+    {
+        return Err(format!(
+            "native-peer E2E helper failed with {}; logs: {}",
+            peer_output.status,
+            work.display()
+        ));
+    }
     nwipc_webkit_testkit::WebKitE2eReport::parse(&String::from_utf8_lossy(&output.stdout))
         .map_err(|error| error.to_string())?;
     print_output(&output);
-    println!(
-        "webkit-e2e: ok signing={} app={} logs={}",
-        if identity == "-" { "ad-hoc" } else { "trusted" },
-        app.display(),
-        work.display()
-    );
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn write_peer_logs(work: &Path, output: &Output) -> Result<(), String> {
+    fs::write(work.join("peer-stdout.log"), &output.stdout).map_err(|error| error.to_string())?;
+    fs::write(work.join("peer-stderr.log"), &output.stderr).map_err(|error| error.to_string())
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 #[cfg(target_os = "macos")]

@@ -8,6 +8,9 @@ publish = false
 
 [dependencies]
 nwipc-macos-artifact.workspace = true
+nwipc-memory-api.workspace = true
+nwipc-memory-iosurface.workspace = true
+nwipc-types.workspace = true
 nwipc-webkit-testkit.workspace = true
 
 [lints]

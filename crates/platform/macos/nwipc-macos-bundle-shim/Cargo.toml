@@ -16,6 +16,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 nwipc-error.workspace = true
 nwipc-macos-bundle-api.workspace = true
+nwipc-memory-api.workspace = true
+nwipc-memory-iosurface.workspace = true
+nwipc-types.workspace = true
+nwipc-webkit-testkit.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

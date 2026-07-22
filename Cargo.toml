@@ -41,6 +41,7 @@ nwipc-bootstrap-codec = { version = "=0.0.0", path = "crates/bootstrap/nwipc-boo
 nwipc-peer-bootstrap = { version = "=0.0.0", path = "crates/bootstrap/nwipc-peer-bootstrap" }
 nwipc-peer-core = { version = "=0.0.0", path = "crates/peer/nwipc-peer-core" }
 nwipc-memory-api = { version = "=0.0.0", path = "crates/memory/nwipc-memory-api" }
+nwipc-memory-iosurface = { version = "=0.0.0", path = "crates/memory/nwipc-memory-iosurface" }
 nwipc-signal-api = { version = "=0.0.0", path = "crates/signal/nwipc-signal-api" }
 nwipc-signal-poll = { version = "=0.0.0", path = "crates/signal/nwipc-signal-poll" }
 nwipc-renderer-api = { version = "=0.0.0", path = "crates/renderer/nwipc-renderer-api" }
