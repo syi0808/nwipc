@@ -11,7 +11,10 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-bootstrap-schema.workspace = true
+nwipc-capabilities = { path = "../../domain/nwipc-capabilities" }
 nwipc-error.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

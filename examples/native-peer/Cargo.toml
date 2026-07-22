@@ -9,5 +9,9 @@ publish = false
 [dependencies]
 nwipc-peer = { version = "=0.0.0", path = "../../crates/peer/nwipc-peer" }
 
+[dev-dependencies]
+nwipc-process-testkit = { path = "../../crates/testing/nwipc-process-testkit" }
+nwipc-types.workspace = true
+
 [lints]
 workspace = true

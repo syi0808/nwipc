@@ -11,7 +11,12 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-bootstrap-codec.workspace = true
+nwipc-bootstrap-schema.workspace = true
 nwipc-error.workspace = true
+
+[dev-dependencies]
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

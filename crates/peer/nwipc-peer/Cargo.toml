@@ -12,6 +12,9 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-error.workspace = true
+nwipc-peer-bootstrap.workspace = true
+nwipc-peer-core.workspace = true
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

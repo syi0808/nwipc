@@ -99,7 +99,7 @@ P1:
 
 P2:
 
-- [ ] Bootstrap/peer/process harness
+- [x] Bootstrap/peer/process harness
 - [ ] IOSurface와 Darwin/hybrid
 - [ ] Two-process provider contract
 
