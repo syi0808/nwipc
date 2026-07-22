@@ -71,6 +71,27 @@ impl Validator {
         let header = bytes
             .get(..REGION_HEADER_SIZE)
             .ok_or_else(|| validation_error(ErrorCode::Truncated, "validate region header"))?;
+        let layout = self.region_layout(header, bytes.len(), expectation)?;
+        let producer = read_u32(header, PRODUCER_CURSOR_OFFSET)?;
+        let consumer = read_u32(header, CONSUMER_CURSOR_OFFSET)?;
+        let cursors = self.cursors(producer, consumer, layout.capacity())?;
+        Ok(ValidatedRegion { layout, cursors })
+    }
+
+    /// Validates immutable mapped-region metadata before any mapping-derived ring access.
+    ///
+    /// # Errors
+    ///
+    /// Rejects truncation, identity mismatch, stale generation, or mapped-length mismatch.
+    pub fn region_layout(
+        self,
+        header: &[u8],
+        mapped_len: usize,
+        expectation: RegionExpectation,
+    ) -> Result<RegionLayout, ErrorReport> {
+        let header = header
+            .get(..REGION_HEADER_SIZE)
+            .ok_or_else(|| validation_error(ErrorCode::Truncated, "validate region header"))?;
         let layout = RegionLayout::decode(header)?;
         if layout.session_id() != expectation.session_id || layout.owner() != expectation.owner {
             return Err(validation_error(
@@ -86,16 +107,13 @@ impl Validator {
         }
         let total_length = usize::try_from(layout.total_length())
             .map_err(|_| validation_error(ErrorCode::InvalidRange, "validate region length"))?;
-        if bytes.len() < total_length {
+        if mapped_len != total_length {
             return Err(validation_error(
-                ErrorCode::Truncated,
+                ErrorCode::InvalidRange,
                 "validate mapped region length",
             ));
         }
-        let producer = read_u32(header, PRODUCER_CURSOR_OFFSET)?;
-        let consumer = read_u32(header, CONSUMER_CURSOR_OFFSET)?;
-        let cursors = self.cursors(producer, consumer, layout.capacity())?;
-        Ok(ValidatedRegion { layout, cursors })
+        Ok(layout)
     }
 
     /// Validates wrapping cursors without performing pointer or mapping access.

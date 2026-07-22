@@ -145,13 +145,13 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record, protocol, validation | 단위 완료 | 협상 결과와 validator를 M3 production transport attach에 연결 |
-| Ring, flow, channel, fragmentation | 단위 완료 | OS mapping/signal adapter와 capability 협상 연결 |
-| IOSurface, Darwin, polling/hybrid | Provider 통합 | 공통 channel contract를 사용하는 양방향 transport 조립 |
+| Domain, layout, record, protocol, validation | Provider 통합 | M4 endpoint bootstrap에서 검증된 transport attach 호출 |
+| Ring, flow, channel, fragmentation | Provider 통합 | M4 public renderer/peer endpoint에 production transport 연결 |
+| IOSurface, Darwin, polling/hybrid | Provider 통합 | M4 bootstrap descriptor에서 provider factory 조립 |
 | Bootstrap schema/codec | 단위 완료 | Runtime resource ownership과 실제 provider descriptor 수명 연결 |
 | Peer core/facade | 단위 완료 | Process-test stream 대신 IOSurface/signal transport attach |
-| Session, session machine, runtime | 단위 완료 | M3 resource preparer에 실제 mapping/signal/port adapter 연결 |
-| Renderer core, JSC, WebKit control plane | Provider 통합 | Renderer bootstrap에서 production channel 생성 |
+| Session, session machine, runtime | 단위 완료 | M4 resource preparer에 실제 mapping/signal/port adapter 연결 |
+| Renderer core, JSC, WebKit control plane | Provider 통합 | M4 renderer bootstrap에서 production channel 생성 |
 | WebKit process smoke | Provider 통합 | Raw echo frame 대신 public renderer↔peer transport 사용 |
 | Diagnostics, metrics, top-level facade | 경계 정의 | Operational snapshot, counter, public configuration/session API |
 
@@ -203,13 +203,19 @@ contract test와 workspace format/clippy/test 및 architecture gate다.
 
 ### M3 — Provider-neutral production transport
 
-- OS `MappedRegion`을 atomic cursor와 ring reader/writer에 안전하게 연결
-- 방향별 IOSurface와 Darwin/hybrid signal을 channel adapter로 조립
-- Fake provider와 IOSurface/Darwin provider에 동일 transport contract suite 적용
-- Fragmentation capability와 negotiated message limit을 production handshake에 연결
+- [x] OS `MappedRegion`을 atomic cursor와 ring reader/writer에 안전하게 연결
+- [x] 방향별 IOSurface와 Darwin/hybrid signal을 channel adapter로 조립
+- [x] Fake provider와 IOSurface/Darwin provider에 동일 transport contract suite 적용
+- [x] Fragmentation capability와 negotiated message limit을 production handshake에 연결
 
 완료: 실제 provider 위에서 FIFO, boundary, backpressure, atomic batch publication, close/reset, dropped-signal
 recovery가 같은 channel API로 동작한다.
+
+검증 경로는 `nwipc-channel-transport`의 공통 contract suite다. Fake mapping과 drop signal 조합 및 실제
+IOSurface/Darwin 조합에 동일한 FIFO, zero/exact/fragmented boundary, saturation/writable recovery,
+close/reset 시나리오를 적용한다. Mapped cursor는 provider의 acquire/release atomic API만 사용하며 region
+identity/layout/length 검증 후에 ring 범위에 연결된다. Fragmentation은 handshake에서 협상된 capability가
+있을 때만 활성화되고 logical message limit은 협상 결과의 작은 값으로 제한된다.
 
 ### M4 — Public facade와 endpoint 통합
 

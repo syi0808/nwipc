@@ -1,0 +1,33 @@
+[package]
+name = "nwipc-channel-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "data-plane"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc-atomic.workspace = true
+nwipc-capabilities.workspace = true
+nwipc-channel-core.workspace = true
+nwipc-error.workspace = true
+nwipc-layout.workspace = true
+nwipc-memory-api.workspace = true
+nwipc-protocol.workspace = true
+nwipc-signal-api.workspace = true
+nwipc-signal-hybrid = { path = "../../signal/nwipc-signal-hybrid" }
+nwipc-signal-poll.workspace = true
+nwipc-validation.workspace = true
+
+[dev-dependencies]
+nwipc-memory-iosurface.workspace = true
+nwipc-signal-darwin = { path = "../../signal/nwipc-signal-darwin" }
+nwipc-testkit = { path = "../../testing/nwipc-testkit" }
+nwipc-types.workspace = true
+
+[lints]
+workspace = true

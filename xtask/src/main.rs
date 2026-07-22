@@ -26,7 +26,7 @@ const UNSAFE_CRATES: &[&str] = &[
 
 const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/data-plane/nwipc-atomic", 5),
-    ("crates/memory/nwipc-memory-iosurface", 24),
+    ("crates/memory/nwipc-memory-iosurface", 28),
     ("crates/signal/nwipc-signal-darwin", 5),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),

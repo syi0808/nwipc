@@ -27,6 +27,7 @@ version = "0.0.0"
 dependencies = [
  "nwipc-error",
  "nwipc-layout",
+ "nwipc-memory-api",
 ]
 
 [[package]]
@@ -65,6 +66,27 @@ dependencies = [
  "nwipc-ring-reader",
  "nwipc-ring-writer",
  "nwipc-testkit",
+]
+
+[[package]]
+name = "nwipc-channel-transport"
+version = "0.0.0"
+dependencies = [
+ "nwipc-atomic",
+ "nwipc-capabilities",
+ "nwipc-channel-core",
+ "nwipc-error",
+ "nwipc-layout",
+ "nwipc-memory-api",
+ "nwipc-memory-iosurface",
+ "nwipc-protocol",
+ "nwipc-signal-api",
+ "nwipc-signal-darwin",
+ "nwipc-signal-hybrid",
+ "nwipc-signal-poll",
+ "nwipc-testkit",
+ "nwipc-types",
+ "nwipc-validation",
 ]
 
 [[package]]

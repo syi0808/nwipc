@@ -4,7 +4,7 @@
 //! adapter when an empty-to-non-empty hint is useful, while [`ChannelEndpoint::receive`] always
 //! inspects acquired cursors and drains records without requiring that hint.
 
-use nwipc_atomic::in_process_ring;
+use nwipc_atomic::{ConsumerMemory, ProducerMemory, in_process_ring};
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_flow_control::{FlowControl, FlowUpdate};
 use nwipc_fragment::{Fragmenter, Reassembler, Reassembly};
@@ -40,37 +40,10 @@ pub fn in_process_channel(
 pub fn in_process_channel_with_config(
     config: ChannelConfig,
 ) -> Result<(ChannelEndpoint, ChannelEndpoint), ErrorReport> {
-    let fragmenter = config.fragmenter()?;
-    config.validate_capacity(fragmenter)?;
-    let ChannelConfig {
-        capacity,
-        maximum_inline_message,
-        maximum_message,
-        low_watermark,
-        high_watermark,
-    } = config;
-    let (a_to_b_producer, a_to_b_consumer) = in_process_ring(capacity)?;
-    let (b_to_a_producer, b_to_a_consumer) = in_process_ring(capacity)?;
-    let endpoint_a = ChannelEndpoint {
-        writer: RingWriter::new(a_to_b_producer, maximum_inline_message),
-        reader: RingReader::new(b_to_a_consumer, maximum_inline_message),
-        flow: FlowControl::new(capacity, low_watermark, high_watermark)?,
-        fragmenter,
-        reassembler: Reassembler::new(maximum_inline_message, maximum_message)?,
-        fragmentation_enabled: maximum_message > maximum_inline_message,
-        local_closed: false,
-        remote_closed: false,
-    };
-    let endpoint_b = ChannelEndpoint {
-        writer: RingWriter::new(b_to_a_producer, maximum_inline_message),
-        reader: RingReader::new(a_to_b_consumer, maximum_inline_message),
-        flow: FlowControl::new(capacity, low_watermark, high_watermark)?,
-        fragmenter,
-        reassembler: Reassembler::new(maximum_inline_message, maximum_message)?,
-        fragmentation_enabled: maximum_message > maximum_inline_message,
-        local_closed: false,
-        remote_closed: false,
-    };
+    let (a_to_b_producer, a_to_b_consumer) = in_process_ring(config.capacity)?;
+    let (b_to_a_producer, b_to_a_consumer) = in_process_ring(config.capacity)?;
+    let endpoint_a = ChannelEndpoint::from_memories(a_to_b_producer, b_to_a_consumer, config)?;
+    let endpoint_b = ChannelEndpoint::from_memories(b_to_a_producer, a_to_b_consumer, config)?;
     Ok((endpoint_a, endpoint_b))
 }
 
@@ -121,6 +94,35 @@ pub struct ChannelEndpoint {
 }
 
 impl ChannelEndpoint {
+    /// Builds one endpoint from opposite-direction mapped or in-process ring halves.
+    ///
+    /// # Errors
+    ///
+    /// Rejects mismatched ring capacity or an invalid channel configuration.
+    pub fn from_memories(
+        writer_memory: ProducerMemory,
+        reader_memory: ConsumerMemory,
+        config: ChannelConfig,
+    ) -> Result<Self, ErrorReport> {
+        let fragmenter = config.fragmenter()?;
+        config.validate_capacity(fragmenter)?;
+        if writer_memory.capacity() != config.capacity
+            || reader_memory.capacity() != config.capacity
+        {
+            return Err(invalid_channel_configuration());
+        }
+        Ok(Self {
+            writer: RingWriter::new(writer_memory, config.maximum_inline_message),
+            reader: RingReader::new(reader_memory, config.maximum_inline_message),
+            flow: FlowControl::new(config.capacity, config.low_watermark, config.high_watermark)?,
+            fragmenter,
+            reassembler: Reassembler::new(config.maximum_inline_message, config.maximum_message)?,
+            fragmentation_enabled: config.maximum_message > config.maximum_inline_message,
+            local_closed: false,
+            remote_closed: false,
+        })
+    }
+
     /// Sends one complete application message.
     ///
     /// # Errors

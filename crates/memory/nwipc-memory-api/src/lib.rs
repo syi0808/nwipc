@@ -52,6 +52,26 @@ pub trait MappedRegion: Send + 'static {
     ///
     /// Returns a typed access, range, or platform error.
     fn write(&mut self, offset: usize, input: &[u8]) -> Result<(), ErrorReport>;
+
+    /// Acquire-loads an aligned shared little-endian `u32`.
+    ///
+    /// Implementations must make this operation atomic with every load/store of the same mapping
+    /// location in every attached process.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed alignment, range, or platform error.
+    fn load_u32_acquire(&self, offset: usize) -> Result<u32, ErrorReport>;
+
+    /// Release-stores an aligned shared little-endian `u32`.
+    ///
+    /// Implementations must make this operation atomic with every load/store of the same mapping
+    /// location in every attached process.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed access, alignment, range, or platform error.
+    fn store_u32_release(&mut self, offset: usize, value: u32) -> Result<(), ErrorReport>;
 }
 
 /// Provider lifecycle contract shared by fake and platform implementations.

@@ -160,8 +160,8 @@ impl RingWriter {
     fn snapshot(&self) -> Result<RingSnapshot, ErrorReport> {
         RingSnapshot::new(
             self.memory.capacity(),
-            self.memory.producer_cursor(),
-            self.memory.consumer_cursor(),
+            self.memory.producer_cursor()?,
+            self.memory.consumer_cursor()?,
         )
     }
 }
@@ -192,7 +192,7 @@ impl PendingWrite<'_> {
             buffered_amount: self
                 .plan
                 .publish_cursor
-                .wrapping_sub(self.writer.memory.consumer_cursor()),
+                .wrapping_sub(self.writer.memory.consumer_cursor()?),
             signal_non_empty: self.plan.signal_non_empty,
         })
     }
@@ -257,7 +257,7 @@ mod tests {
                 .prepare(RecordKind::Data, RecordFlags::NONE, b"partial")
                 .unwrap();
         }
-        assert_eq!(consumer.producer_cursor(), 0);
+        assert_eq!(consumer.producer_cursor().unwrap(), 0);
         assert_eq!(
             consumer.read(0, RECORD_PREFIX_SIZE).unwrap_err().code(),
             ErrorCode::InvalidRange
@@ -272,9 +272,9 @@ mod tests {
             .send(RecordKind::Data, RecordFlags::NONE, b"committed")
             .unwrap();
         drop(writer);
-        let committed = consumer.producer_cursor();
+        let committed = consumer.producer_cursor().unwrap();
         let bytes = consumer.read(0, committed as usize).unwrap();
-        let header = ParsedRecordHeader::decode_committed(bytes, 32).unwrap();
+        let header = ParsedRecordHeader::decode_committed(&bytes, 32).unwrap();
         assert_eq!(
             &bytes[RECORD_PREFIX_SIZE..RECORD_PREFIX_SIZE + header.payload_length as usize],
             b"committed"
@@ -291,7 +291,7 @@ mod tests {
         let sent = writer.send_fragments(RecordKind::Data, &fragments).unwrap();
         assert!(sent.signal_non_empty);
         let bytes = consumer.read(0, sent.buffered_amount as usize).unwrap();
-        let first = ParsedRecordHeader::decode_committed(bytes, 32).unwrap();
+        let first = ParsedRecordHeader::decode_committed(&bytes, 32).unwrap();
         let second_offset = first.record_length as usize;
         let second = ParsedRecordHeader::decode_committed(&bytes[second_offset..], 32).unwrap();
         let third_offset = second_offset + second.record_length as usize;
@@ -317,6 +317,6 @@ mod tests {
                 .code(),
             ErrorCode::Backpressured
         );
-        assert_eq!(consumer.producer_cursor(), 0);
+        assert_eq!(consumer.producer_cursor().unwrap(), 0);
     }
 }

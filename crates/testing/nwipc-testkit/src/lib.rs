@@ -106,6 +106,33 @@ impl MappedRegion for FakeMemoryMapping {
         bytes[offset..end].copy_from_slice(input);
         Ok(())
     }
+
+    fn load_u32_acquire(&self, offset: usize) -> Result<u32, ErrorReport> {
+        let end = checked_atomic_end(offset, self.byte_len, "load fake atomic")?;
+        let bytes = self
+            .bytes
+            .lock()
+            .map_err(|_| fake_error(ErrorCode::Internal, "lock fake memory"))?;
+        Ok(u32::from_le_bytes(bytes[offset..end].try_into().map_err(
+            |_| fake_error(ErrorCode::InvalidRange, "load fake atomic"),
+        )?))
+    }
+
+    fn store_u32_release(&mut self, offset: usize, value: u32) -> Result<(), ErrorReport> {
+        if self.access != MappingAccess::ReadWrite {
+            return Err(fake_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "store read-only fake atomic",
+            ));
+        }
+        let end = checked_atomic_end(offset, self.byte_len, "store fake atomic")?;
+        let mut bytes = self
+            .bytes
+            .lock()
+            .map_err(|_| fake_error(ErrorCode::Internal, "lock fake memory"))?;
+        bytes[offset..end].copy_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
 }
 
 /// Deterministic implementation of the platform-neutral memory contract.
@@ -220,7 +247,7 @@ impl SignalSender for FakeSignalSender {
 }
 
 /// Listener half of a deterministic signal provider.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FakeSignalListener {
     signal: Arc<Mutex<FakeSignal>>,
     cancelled: bool,
@@ -286,6 +313,17 @@ fn checked_end(
         return Err(fake_error(ErrorCode::InvalidRange, operation));
     }
     Ok(end)
+}
+
+fn checked_atomic_end(
+    offset: usize,
+    byte_len: usize,
+    operation: &'static str,
+) -> Result<usize, ErrorReport> {
+    if offset % align_of::<u32>() != 0 {
+        return Err(fake_error(ErrorCode::InvalidAlignment, operation));
+    }
+    checked_end(offset, size_of::<u32>(), byte_len, operation)
 }
 
 fn fake_error(code: ErrorCode, operation: &'static str) -> ErrorReport {

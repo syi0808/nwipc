@@ -241,6 +241,22 @@ impl MappedRegion for IoSurfaceMapping {
         checked_end(offset, input.len(), self.byte_len, "write IOSurface")?;
         platform::write(&self.inner, offset, input)
     }
+
+    fn load_u32_acquire(&self, offset: usize) -> Result<u32, ErrorReport> {
+        checked_atomic_end(offset, self.byte_len, "load IOSurface atomic")?;
+        platform::load_u32_acquire(&self.inner, offset)
+    }
+
+    fn store_u32_release(&mut self, offset: usize, value: u32) -> Result<(), ErrorReport> {
+        if self.access != MappingAccess::ReadWrite {
+            return Err(memory_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "store read-only IOSurface atomic",
+            ));
+        }
+        checked_atomic_end(offset, self.byte_len, "store IOSurface atomic")?;
+        platform::store_u32_release(&self.inner, offset, value)
+    }
 }
 
 fn checked_end(
@@ -256,6 +272,17 @@ fn checked_end(
         return Err(memory_error(ErrorCode::InvalidRange, operation));
     }
     Ok(end)
+}
+
+fn checked_atomic_end(
+    offset: usize,
+    byte_len: usize,
+    operation: &'static str,
+) -> Result<usize, ErrorReport> {
+    if offset % align_of::<u32>() != 0 {
+        return Err(memory_error(ErrorCode::InvalidAlignment, operation));
+    }
+    checked_end(offset, size_of::<u32>(), byte_len, operation)
 }
 
 fn memory_error(code: ErrorCode, operation: &'static str) -> ErrorReport {
@@ -274,6 +301,7 @@ fn memory_error(code: ErrorCode, operation: &'static str) -> ErrorReport {
 mod platform {
     use std::ffi::{c_int, c_void};
     use std::ptr;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::{
         ErrorCode, ErrorReport, Generation, IoSurfaceDescriptor, IoSurfaceMapping, MappingAccess,
@@ -440,16 +468,62 @@ mod platform {
         })
     }
 
+    pub(super) fn load_u32_acquire(mapping: &Mapping, offset: usize) -> Result<u32, ErrorReport> {
+        with_locked(
+            mapping,
+            IO_SURFACE_LOCK_READ_ONLY,
+            "load IOSurface atomic",
+            |base| {
+                if base
+                    .wrapping_add(offset)
+                    .align_offset(align_of::<AtomicU32>())
+                    != 0
+                {
+                    return Err(memory_error(
+                        ErrorCode::InvalidAlignment,
+                        "load IOSurface atomic",
+                    ));
+                }
+                #[allow(clippy::cast_ptr_alignment)]
+                let pointer = unsafe { base.add(offset).cast::<AtomicU32>() };
+                Ok(unsafe { &*pointer }.load(Ordering::Acquire))
+            },
+        )?
+    }
+
+    pub(super) fn store_u32_release(
+        mapping: &Mapping,
+        offset: usize,
+        value: u32,
+    ) -> Result<(), ErrorReport> {
+        with_locked(mapping, 0, "store IOSurface atomic", |base| {
+            if base
+                .wrapping_add(offset)
+                .align_offset(align_of::<AtomicU32>())
+                != 0
+            {
+                return Err(memory_error(
+                    ErrorCode::InvalidAlignment,
+                    "store IOSurface atomic",
+                ));
+            }
+            #[allow(clippy::cast_ptr_alignment)]
+            let pointer = unsafe { base.add(offset).cast::<AtomicU32>() };
+            unsafe { &*pointer }.store(value, Ordering::Release);
+            Ok(())
+        })?
+    }
+
     pub(super) fn allocated_len(mapping: &Mapping) -> usize {
         unsafe { IOSurfaceGetAllocSize(mapping.0) }
     }
 
-    fn with_locked(
+    fn with_locked<Output>(
         mapping: &Mapping,
         options: u32,
         operation: &'static str,
-        body: impl FnOnce(*mut u8),
-    ) -> Result<(), ErrorReport> {
+        body: impl FnOnce(*mut u8) -> Output,
+    ) -> Result<Output, ErrorReport> {
         if unsafe { IOSurfaceLock(mapping.0, options, ptr::null_mut()) } != 0 {
             return Err(memory_error(ErrorCode::Internal, operation));
         }
@@ -458,11 +532,11 @@ mod platform {
             let _ = unsafe { IOSurfaceUnlock(mapping.0, options, ptr::null_mut()) };
             return Err(memory_error(ErrorCode::Internal, operation));
         }
-        body(base);
+        let output = body(base);
         if unsafe { IOSurfaceUnlock(mapping.0, options, ptr::null_mut()) } != 0 {
             return Err(memory_error(ErrorCode::Internal, operation));
         }
-        Ok(())
+        Ok(output)
     }
 }
 
@@ -492,6 +566,14 @@ mod platform {
 
     pub(super) fn write(_: &Mapping, _: usize, _: &[u8]) -> Result<(), ErrorReport> {
         Err(ErrorReport::unsupported("write IOSurface"))
+    }
+
+    pub(super) fn load_u32_acquire(_: &Mapping, _: usize) -> Result<u32, ErrorReport> {
+        Err(ErrorReport::unsupported("load IOSurface atomic"))
+    }
+
+    pub(super) fn store_u32_release(_: &Mapping, _: usize, _: u32) -> Result<(), ErrorReport> {
+        Err(ErrorReport::unsupported("store IOSurface atomic"))
     }
 
     pub(super) const fn allocated_len(_: &Mapping) -> usize {

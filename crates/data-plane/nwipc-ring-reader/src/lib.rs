@@ -34,7 +34,7 @@ impl RingReader {
     /// # Errors
     ///
     /// Returns a protocol error before exposing malformed or out-of-range bytes.
-    pub fn peek(&self) -> Result<ReadItem<'_>, ErrorReport> {
+    pub fn peek(&self) -> Result<ReadItem, ErrorReport> {
         let snapshot = self.snapshot()?;
         if snapshot.is_empty() {
             return Ok(ReadItem::Empty);
@@ -57,7 +57,7 @@ impl RingReader {
         let committed = self
             .memory
             .read(snapshot.consumer_cursor(), contiguous as usize)?;
-        let header = ParsedRecordHeader::decode_committed(committed, self.maximum_inline_message)?;
+        let header = ParsedRecordHeader::decode_committed(&committed, self.maximum_inline_message)?;
         if header.record_length > snapshot.used() || header.record_length > contiguous {
             return Err(reader_error(ErrorCode::Truncated, "committed record range"));
         }
@@ -78,9 +78,9 @@ impl RingReader {
             ));
         }
         let payload_end = RECORD_PREFIX_SIZE + header.payload_length as usize;
-        Ok(ReadItem::Record(BorrowedRecord {
+        Ok(ReadItem::Record(PeekedRecord {
             header,
-            payload: &committed[RECORD_PREFIX_SIZE..payload_end],
+            payload: committed[RECORD_PREFIX_SIZE..payload_end].to_vec(),
             receipt,
         }))
     }
@@ -91,7 +91,7 @@ impl RingReader {
     ///
     /// Returns `InvalidCursor` if the receipt is stale or belongs to another reader position.
     pub fn consume(&mut self, receipt: ReadReceipt) -> Result<ConsumeOutcome, ErrorReport> {
-        if self.memory.consumer_cursor() != receipt.current_cursor {
+        if self.memory.consumer_cursor()? != receipt.current_cursor {
             return Err(reader_error(ErrorCode::InvalidCursor, "stale read receipt"));
         }
         if let Some(sequence) = receipt.sequence {
@@ -106,7 +106,7 @@ impl RingReader {
         self.memory.consume(receipt.next_cursor)?;
         let remaining = self
             .memory
-            .producer_cursor()
+            .producer_cursor()?
             .wrapping_sub(receipt.next_cursor);
         if remaining > self.memory.capacity() {
             return Err(reader_error(
@@ -133,7 +133,7 @@ impl RingReader {
                 ReadItem::Record(record) => (
                     Some(OwnedRecord {
                         header: record.header,
-                        payload: record.payload.to_vec(),
+                        payload: record.payload,
                     }),
                     record.receipt,
                 ),
@@ -148,33 +148,33 @@ impl RingReader {
     fn snapshot(&self) -> Result<RingSnapshot, ErrorReport> {
         RingSnapshot::new(
             self.memory.capacity(),
-            self.memory.producer_cursor(),
-            self.memory.consumer_cursor(),
+            self.memory.producer_cursor()?,
+            self.memory.consumer_cursor()?,
         )
     }
 }
 
 /// Next committed item in physical ring order.
-pub enum ReadItem<'memory> {
+pub enum ReadItem {
     /// No bytes are committed.
     Empty,
     /// Wrap padding to consume before peeking again.
     Padding(ReadReceipt),
-    /// A validated record borrowing committed payload bytes.
-    Record(BorrowedRecord<'memory>),
+    /// A validated record with copied payload bytes.
+    Record(PeekedRecord),
 }
 
-/// A validated borrowed record.
-pub struct BorrowedRecord<'memory> {
+/// A validated record copied before its shared range is consumed.
+pub struct PeekedRecord {
     /// Parsed fixed-width record header.
     pub header: ParsedRecordHeader,
     /// Exact payload without alignment padding.
-    pub payload: &'memory [u8],
+    pub payload: Vec<u8>,
     receipt: ReadReceipt,
 }
 
-impl BorrowedRecord<'_> {
-    /// Returns the token used to publish consumption after this borrow ends.
+impl PeekedRecord {
+    /// Returns the token used to publish consumption after inspection ends.
     pub const fn receipt(&self) -> ReadReceipt {
         self.receipt
     }

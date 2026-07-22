@@ -10,7 +10,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
-use nwipc_layout::{MAX_RING_CAPACITY, RECORD_ALIGNMENT};
+use nwipc_layout::{
+    CONSUMER_CURSOR_OFFSET, MAX_RING_CAPACITY, PRODUCER_CURSOR_OFFSET, RECORD_ALIGNMENT,
+    RING_DATA_OFFSET,
+};
+use nwipc_memory_api::{MappedRegion, MappingAccess};
 
 const RECORD_ALIGNMENT_U32: u32 = 8;
 const _: () = assert!(RECORD_ALIGNMENT == RECORD_ALIGNMENT_U32 as usize);
@@ -84,9 +88,11 @@ pub fn in_process_ring(capacity: u32) -> Result<(ProducerMemory, ConsumerMemory)
     });
     Ok((
         ProducerMemory {
-            inner: Arc::clone(&inner),
+            inner: ProducerInner::InProcess(Arc::clone(&inner)),
         },
-        ConsumerMemory { inner },
+        ConsumerMemory {
+            inner: ConsumerInner::InProcess(inner),
+        },
     ))
 }
 
@@ -103,23 +109,52 @@ unsafe impl Sync for SharedRing {}
 
 /// Producer-owned view of shared bytes and cursors.
 pub struct ProducerMemory {
-    inner: Arc<SharedRing>,
+    inner: ProducerInner,
+}
+
+enum ProducerInner {
+    InProcess(Arc<SharedRing>),
+    Mapped {
+        mapping: Box<dyn MappedRegion>,
+        capacity: u32,
+    },
 }
 
 impl ProducerMemory {
     /// Returns the ring's byte capacity.
     pub fn capacity(&self) -> u32 {
-        self.inner.capacity
+        match &self.inner {
+            ProducerInner::InProcess(inner) => inner.capacity,
+            ProducerInner::Mapped { capacity, .. } => *capacity,
+        }
     }
 
     /// Returns the locally owned producer cursor.
-    pub fn producer_cursor(&self) -> u32 {
-        self.inner.producer.load(Ordering::Relaxed)
+    ///
+    /// # Errors
+    ///
+    /// Propagates a mapped provider's atomic-load failure.
+    pub fn producer_cursor(&self) -> Result<u32, ErrorReport> {
+        match &self.inner {
+            ProducerInner::InProcess(inner) => Ok(inner.producer.load(Ordering::Relaxed)),
+            ProducerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), PRODUCER_CURSOR_OFFSET)
+            }
+        }
     }
 
     /// Acquires the latest consumer cursor.
-    pub fn consumer_cursor(&self) -> u32 {
-        self.inner.consumer.load(Ordering::Acquire)
+    ///
+    /// # Errors
+    ///
+    /// Propagates a mapped provider's atomic-load failure.
+    pub fn consumer_cursor(&self) -> Result<u32, ErrorReport> {
+        match &self.inner {
+            ProducerInner::InProcess(inner) => Ok(inner.consumer.load(Ordering::Acquire)),
+            ProducerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), CONSUMER_CURSOR_OFFSET)
+            }
+        }
     }
 
     /// Writes a contiguous unpublished range at an absolute logical cursor.
@@ -129,11 +164,11 @@ impl ProducerMemory {
     /// Returns `InvalidRange` when the range crosses the physical ring end or is not wholly
     /// inside producer-owned free space.
     pub fn write(&mut self, cursor: u32, source: &[u8]) -> Result<(), ErrorReport> {
-        let producer = self.producer_cursor();
+        let producer = self.producer_cursor()?;
+        let capacity = self.capacity();
         let free = self
-            .inner
-            .capacity
-            .checked_sub(producer.wrapping_sub(self.consumer_cursor()))
+            .capacity()
+            .checked_sub(producer.wrapping_sub(self.consumer_cursor()?))
             .ok_or_else(|| atomic_error(ErrorCode::InvalidCursor))?;
         let distance = cursor.wrapping_sub(producer);
         let length =
@@ -141,11 +176,18 @@ impl ProducerMemory {
         if distance > free || length > free - distance {
             return Err(atomic_error(ErrorCode::InvalidRange));
         }
-        let offset = cursor % self.inner.capacity;
-        let range = checked_range(self.inner.capacity, offset, source.len())?;
-        for (cell, byte) in self.inner.bytes[range].iter().zip(source) {
-            // SAFETY: Only this unique producer handle writes unpublished/free byte ranges.
-            unsafe { *cell.get() = *byte };
+        let offset = cursor % capacity;
+        let range = checked_range(capacity, offset, source.len())?;
+        match &mut self.inner {
+            ProducerInner::InProcess(inner) => {
+                for (cell, byte) in inner.bytes[range].iter().zip(source) {
+                    // SAFETY: Only this unique producer handle writes unpublished/free ranges.
+                    unsafe { *cell.get() = *byte };
+                }
+            }
+            ProducerInner::Mapped { mapping, .. } => {
+                mapping.write(RING_DATA_OFFSET + range.start, source)?;
+            }
         }
         Ok(())
     }
@@ -156,59 +198,107 @@ impl ProducerMemory {
     ///
     /// Returns `InvalidCursor` rather than publishing beyond producer-owned free space.
     pub fn publish(&mut self, cursor: u32) -> Result<(), ErrorReport> {
-        let current = self.producer_cursor();
-        let used = current.wrapping_sub(self.consumer_cursor());
+        let current = self.producer_cursor()?;
+        let used = current.wrapping_sub(self.consumer_cursor()?);
         let advance = cursor.wrapping_sub(current);
-        if used > self.inner.capacity || advance > self.inner.capacity - used {
+        if used > self.capacity() || advance > self.capacity() - used {
             return Err(atomic_error(ErrorCode::InvalidCursor));
         }
-        self.inner.producer.store(cursor, Ordering::Release);
+        match &mut self.inner {
+            ProducerInner::InProcess(inner) => inner.producer.store(cursor, Ordering::Release),
+            ProducerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::store_u32_release(
+                    mapping.as_mut(),
+                    PRODUCER_CURSOR_OFFSET,
+                    cursor,
+                )?;
+            }
+        }
         Ok(())
     }
 }
 
 /// Consumer-owned view of shared bytes and cursors.
 pub struct ConsumerMemory {
-    inner: Arc<SharedRing>,
+    inner: ConsumerInner,
+}
+
+enum ConsumerInner {
+    InProcess(Arc<SharedRing>),
+    Mapped {
+        mapping: Box<dyn MappedRegion>,
+        capacity: u32,
+    },
 }
 
 impl ConsumerMemory {
     /// Returns the ring's byte capacity.
     pub fn capacity(&self) -> u32 {
-        self.inner.capacity
+        match &self.inner {
+            ConsumerInner::InProcess(inner) => inner.capacity,
+            ConsumerInner::Mapped { capacity, .. } => *capacity,
+        }
     }
 
     /// Acquires the latest producer cursor.
-    pub fn producer_cursor(&self) -> u32 {
-        self.inner.producer.load(Ordering::Acquire)
+    ///
+    /// # Errors
+    ///
+    /// Propagates a mapped provider's atomic-load failure.
+    pub fn producer_cursor(&self) -> Result<u32, ErrorReport> {
+        match &self.inner {
+            ConsumerInner::InProcess(inner) => Ok(inner.producer.load(Ordering::Acquire)),
+            ConsumerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), PRODUCER_CURSOR_OFFSET)
+            }
+        }
     }
 
     /// Returns the locally owned consumer cursor.
-    pub fn consumer_cursor(&self) -> u32 {
-        self.inner.consumer.load(Ordering::Relaxed)
+    ///
+    /// # Errors
+    ///
+    /// Propagates a mapped provider's atomic-load failure.
+    pub fn consumer_cursor(&self) -> Result<u32, ErrorReport> {
+        match &self.inner {
+            ConsumerInner::InProcess(inner) => Ok(inner.consumer.load(Ordering::Relaxed)),
+            ConsumerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), CONSUMER_CURSOR_OFFSET)
+            }
+        }
     }
 
-    /// Borrows one contiguous committed range at an absolute logical cursor.
+    /// Copies one contiguous committed range at an absolute logical cursor.
     ///
     /// # Errors
     ///
     /// Returns `InvalidRange` when the range crosses the physical ring end or is not wholly
     /// inside consumer-owned committed space.
-    pub fn read(&self, cursor: u32, length: usize) -> Result<&[u8], ErrorReport> {
-        let consumer = self.consumer_cursor();
-        let used = self.producer_cursor().wrapping_sub(consumer);
+    pub fn read(&self, cursor: u32, length: usize) -> Result<Vec<u8>, ErrorReport> {
+        let consumer = self.consumer_cursor()?;
+        let used = self.producer_cursor()?.wrapping_sub(consumer);
         let distance = cursor.wrapping_sub(consumer);
         let length_u32 =
             u32::try_from(length).map_err(|_| atomic_error(ErrorCode::InvalidRange))?;
-        if used > self.inner.capacity || distance > used || length_u32 > used - distance {
+        if used > self.capacity() || distance > used || length_u32 > used - distance {
             return Err(atomic_error(ErrorCode::InvalidRange));
         }
-        let offset = cursor % self.inner.capacity;
-        let range = checked_range(self.inner.capacity, offset, length)?;
-        let pointer = self.inner.bytes.as_ptr().cast::<u8>();
-        // SAFETY: Acquire of the producer cursor precedes this call. The unique consumer handle
-        // does not publish consumption while the returned borrow keeps it immutably borrowed.
-        Ok(unsafe { std::slice::from_raw_parts(pointer.add(range.start), range.len()) })
+        let capacity = self.capacity();
+        let offset = cursor % capacity;
+        let range = checked_range(capacity, offset, length)?;
+        let mut output = vec![0; length];
+        match &self.inner {
+            ConsumerInner::InProcess(inner) => {
+                for (output, cell) in output.iter_mut().zip(&inner.bytes[range]) {
+                    // SAFETY: Acquire preceded this read and only the consumer reads committed bytes.
+                    *output = unsafe { *cell.get() };
+                }
+            }
+            ConsumerInner::Mapped { mapping, .. } => {
+                mapping.read(RING_DATA_OFFSET + range.start, &mut output)?;
+            }
+        }
+        Ok(output)
     }
 
     /// Release-publishes consumption through `cursor`.
@@ -217,15 +307,72 @@ impl ConsumerMemory {
     ///
     /// Returns `InvalidCursor` rather than consuming beyond committed bytes.
     pub fn consume(&mut self, cursor: u32) -> Result<(), ErrorReport> {
-        let current = self.consumer_cursor();
-        let used = self.producer_cursor().wrapping_sub(current);
+        let current = self.consumer_cursor()?;
+        let used = self.producer_cursor()?.wrapping_sub(current);
         let advance = cursor.wrapping_sub(current);
-        if used > self.inner.capacity || advance > used {
+        if used > self.capacity() || advance > used {
             return Err(atomic_error(ErrorCode::InvalidCursor));
         }
-        self.inner.consumer.store(cursor, Ordering::Release);
+        match &mut self.inner {
+            ConsumerInner::InProcess(inner) => inner.consumer.store(cursor, Ordering::Release),
+            ConsumerInner::Mapped { mapping, .. } => {
+                <dyn MappedRegion>::store_u32_release(
+                    mapping.as_mut(),
+                    CONSUMER_CURSOR_OFFSET,
+                    cursor,
+                )?;
+            }
+        }
         Ok(())
     }
+}
+
+/// Connects an owned read-write mapping as the sole producer for its directional ring.
+///
+/// # Errors
+///
+/// Rejects a read-only, truncated, oversized, or misaligned mapping.
+pub fn mapped_producer(
+    mapping: impl MappedRegion,
+    capacity: u32,
+) -> Result<ProducerMemory, ErrorReport> {
+    validate_mapping(&mapping, capacity)?;
+    Ok(ProducerMemory {
+        inner: ProducerInner::Mapped {
+            mapping: Box::new(mapping),
+            capacity,
+        },
+    })
+}
+
+/// Connects an owned read-write mapping as the sole consumer for its directional ring.
+///
+/// # Errors
+///
+/// Rejects a read-only, truncated, oversized, or misaligned mapping.
+pub fn mapped_consumer(
+    mapping: impl MappedRegion,
+    capacity: u32,
+) -> Result<ConsumerMemory, ErrorReport> {
+    validate_mapping(&mapping, capacity)?;
+    Ok(ConsumerMemory {
+        inner: ConsumerInner::Mapped {
+            mapping: Box::new(mapping),
+            capacity,
+        },
+    })
+}
+
+fn validate_mapping(mapping: &impl MappedRegion, capacity: u32) -> Result<(), ErrorReport> {
+    if mapping.access() != MappingAccess::ReadWrite
+        || capacity == 0
+        || capacity > MAX_RING_CAPACITY
+        || capacity % RECORD_ALIGNMENT_U32 != 0
+        || mapping.len() != RING_DATA_OFFSET.saturating_add(capacity as usize)
+    {
+        return Err(atomic_error(ErrorCode::InvalidRange));
+    }
+    Ok(())
 }
 
 fn checked_range(
@@ -260,12 +407,12 @@ mod tests {
     fn acquire_release_cursor_publishes_bytes() {
         let (mut producer, mut consumer) = in_process_ring(64).unwrap();
         producer.write(0, b"complete").unwrap();
-        assert_eq!(consumer.producer_cursor(), 0);
+        assert_eq!(consumer.producer_cursor().unwrap(), 0);
         producer.publish(8).unwrap();
-        assert_eq!(consumer.producer_cursor(), 8);
+        assert_eq!(consumer.producer_cursor().unwrap(), 8);
         assert_eq!(consumer.read(0, 8).unwrap(), b"complete");
         consumer.consume(8).unwrap();
-        assert_eq!(producer.consumer_cursor(), 8);
+        assert_eq!(producer.consumer_cursor().unwrap(), 8);
     }
 
     #[test]
