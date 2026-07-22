@@ -91,13 +91,25 @@ name = "nwipc-error"
 version = "0.0.0"
 
 [[package]]
+name = "nwipc-fragment"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+ "nwipc-layout",
+ "nwipc-record",
+ "nwipc-types",
+]
+
+[[package]]
 name = "nwipc-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "nwipc-bootstrap-codec",
+ "nwipc-fragment",
  "nwipc-layout",
  "nwipc-record",
+ "nwipc-types",
 ]
 
 [[package]]

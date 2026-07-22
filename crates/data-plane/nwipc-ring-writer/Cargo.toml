@@ -13,6 +13,7 @@ owner = "nwipc"
 [dependencies]
 nwipc-atomic.workspace = true
 nwipc-error.workspace = true
+nwipc-fragment.workspace = true
 nwipc-layout.workspace = true
 nwipc-record.workspace = true
 nwipc-ring-core.workspace = true

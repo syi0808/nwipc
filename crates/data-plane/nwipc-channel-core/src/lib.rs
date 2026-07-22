@@ -7,6 +7,7 @@
 use nwipc_atomic::in_process_ring;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_flow_control::{FlowControl, FlowUpdate};
+use nwipc_fragment::{Fragmenter, Reassembler, Reassembly};
 use nwipc_record::{RecordFlags, RecordKind};
 use nwipc_ring_reader::{OwnedRecord, RingReader};
 use nwipc_ring_writer::{RingWriter, SendOutcome};
@@ -22,12 +23,41 @@ pub fn in_process_channel(
     low_watermark: u32,
     high_watermark: u32,
 ) -> Result<(ChannelEndpoint, ChannelEndpoint), ErrorReport> {
+    in_process_channel_with_config(ChannelConfig {
+        capacity,
+        maximum_inline_message,
+        maximum_message: maximum_inline_message,
+        low_watermark,
+        high_watermark,
+    })
+}
+
+/// Creates two endpoints with explicit inline and logical-message limits.
+///
+/// # Errors
+///
+/// Returns `InvalidRange` when limits, capacity, or watermarks are inconsistent.
+pub fn in_process_channel_with_config(
+    config: ChannelConfig,
+) -> Result<(ChannelEndpoint, ChannelEndpoint), ErrorReport> {
+    let fragmenter = config.fragmenter()?;
+    config.validate_capacity(fragmenter)?;
+    let ChannelConfig {
+        capacity,
+        maximum_inline_message,
+        maximum_message,
+        low_watermark,
+        high_watermark,
+    } = config;
     let (a_to_b_producer, a_to_b_consumer) = in_process_ring(capacity)?;
     let (b_to_a_producer, b_to_a_consumer) = in_process_ring(capacity)?;
     let endpoint_a = ChannelEndpoint {
         writer: RingWriter::new(a_to_b_producer, maximum_inline_message),
         reader: RingReader::new(b_to_a_consumer, maximum_inline_message),
         flow: FlowControl::new(capacity, low_watermark, high_watermark)?,
+        fragmenter,
+        reassembler: Reassembler::new(maximum_inline_message, maximum_message)?,
+        fragmentation_enabled: maximum_message > maximum_inline_message,
         local_closed: false,
         remote_closed: false,
     };
@@ -35,10 +65,47 @@ pub fn in_process_channel(
         writer: RingWriter::new(b_to_a_producer, maximum_inline_message),
         reader: RingReader::new(a_to_b_consumer, maximum_inline_message),
         flow: FlowControl::new(capacity, low_watermark, high_watermark)?,
+        fragmenter,
+        reassembler: Reassembler::new(maximum_inline_message, maximum_message)?,
+        fragmentation_enabled: maximum_message > maximum_inline_message,
         local_closed: false,
         remote_closed: false,
     };
     Ok((endpoint_a, endpoint_b))
+}
+
+/// Bounded in-process channel configuration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChannelConfig {
+    /// Directional ring capacity in bytes.
+    pub capacity: u32,
+    /// Maximum payload bytes stored in one record.
+    pub maximum_inline_message: u32,
+    /// Maximum payload bytes in one reassembled logical message.
+    pub maximum_message: u32,
+    /// Occupancy at or below which a writable edge is emitted.
+    pub low_watermark: u32,
+    /// Occupancy at or above which new sends are backpressured.
+    pub high_watermark: u32,
+}
+
+impl ChannelConfig {
+    fn fragmenter(self) -> Result<Fragmenter, ErrorReport> {
+        Fragmenter::new(self.maximum_inline_message, self.maximum_message)
+    }
+
+    fn validate_capacity(self, fragmenter: Fragmenter) -> Result<(), ErrorReport> {
+        let wire_bytes = fragmenter.maximum_wire_bytes()?;
+        let worst_case_bytes = if self.maximum_message > self.maximum_inline_message {
+            fragmenter.maximum_batch_bytes()?
+        } else {
+            wire_bytes
+        };
+        if worst_case_bytes > self.capacity {
+            return Err(invalid_channel_configuration());
+        }
+        Ok(())
+    }
 }
 
 /// One side of a bidirectional channel.
@@ -46,6 +113,9 @@ pub struct ChannelEndpoint {
     writer: RingWriter,
     reader: RingReader,
     flow: FlowControl,
+    fragmenter: Fragmenter,
+    reassembler: Reassembler,
+    fragmentation_enabled: bool,
     local_closed: bool,
     remote_closed: bool,
 }
@@ -67,9 +137,8 @@ impl ChannelEndpoint {
                 Recoverability::Retryable,
             ));
         }
-        let outcome = self
-            .writer
-            .send(RecordKind::Data, RecordFlags::END_OF_MESSAGE, payload)?;
+        let fragments = self.fragmenter.fragments(payload)?;
+        let outcome = self.writer.send_fragments(RecordKind::Data, &fragments)?;
         self.flow.update(outcome.buffered_amount)?;
         Ok(ChannelSend::from(outcome))
     }
@@ -114,22 +183,46 @@ impl ChannelEndpoint {
     ///
     /// Returns a validation error for malformed or out-of-sequence shared records.
     pub fn receive(&mut self) -> Result<Option<ChannelEvent>, ErrorReport> {
-        let Some(record) = self.reader.receive()? else {
-            return Ok(None);
-        };
-        let event = match record.kind() {
-            RecordKind::Data => ChannelEvent::Message(record.payload),
-            RecordKind::Close => {
-                self.remote_closed = true;
-                ChannelEvent::Closed
-            }
-            RecordKind::Reset => {
-                self.remote_closed = true;
-                ChannelEvent::Reset
-            }
-            kind => ChannelEvent::Control(ControlRecord { kind, record }),
-        };
-        Ok(Some(event))
+        loop {
+            let Some(record) = self.reader.receive()? else {
+                return Ok(None);
+            };
+            let fragmented = record.flags().bits() & RecordFlags::FRAGMENTED.bits() != 0;
+            let event = match record.kind() {
+                RecordKind::Data => {
+                    if fragmented && !self.fragmentation_enabled {
+                        return Err(channel_protocol_error("fragmentation not enabled"));
+                    }
+                    match self.reassembler.push(record.header, &record.payload)? {
+                        Reassembly::Pending => continue,
+                        Reassembly::Complete(payload) => ChannelEvent::Message(payload),
+                    }
+                }
+                RecordKind::Close => {
+                    if fragmented {
+                        return Err(channel_protocol_error("fragmented close"));
+                    }
+                    self.reassembler.discard();
+                    self.remote_closed = true;
+                    ChannelEvent::Closed
+                }
+                RecordKind::Reset => {
+                    if fragmented {
+                        return Err(channel_protocol_error("fragmented reset"));
+                    }
+                    self.reassembler.discard();
+                    self.remote_closed = true;
+                    ChannelEvent::Reset
+                }
+                kind => {
+                    if fragmented {
+                        return Err(channel_protocol_error("fragmented control record"));
+                    }
+                    ChannelEvent::Control(ControlRecord { kind, record })
+                }
+            };
+            return Ok(Some(event));
+        }
     }
 
     /// Re-observes byte occupancy and reports the backpressured-to-writable edge once.
@@ -197,6 +290,24 @@ fn channel_error(code: ErrorCode, recoverability: Recoverability) -> ErrorReport
         code,
         recoverability,
         "channel send",
+    )
+}
+
+fn channel_protocol_error(operation: &'static str) -> ErrorReport {
+    ErrorReport::new(
+        ErrorCategory::Protocol,
+        ErrorCode::ProtocolViolation,
+        Recoverability::ReplaceEndpoint,
+        operation,
+    )
+}
+
+fn invalid_channel_configuration() -> ErrorReport {
+    ErrorReport::new(
+        ErrorCategory::Configuration,
+        ErrorCode::InvalidRange,
+        Recoverability::Terminal,
+        "channel fragmentation capacity",
     )
 }
 
@@ -336,5 +447,109 @@ mod tests {
         assert!(!dropped.try_wait());
         assert_eq!(endpoint_a.receive().unwrap(), None);
         assert_eq!(endpoint_b.receive().unwrap(), None);
+    }
+
+    #[test]
+    fn fragments_and_reassembles_one_logical_message() {
+        let config = ChannelConfig {
+            capacity: 512,
+            maximum_inline_message: 32,
+            maximum_message: 100,
+            low_watermark: 128,
+            high_watermark: 384,
+        };
+        let (mut sender, mut receiver) = in_process_channel_with_config(config).unwrap();
+        let payload = (0_u8..100).collect::<Vec<_>>();
+        let sent = sender.send(&payload).unwrap();
+        assert!(sent.notify);
+        assert_eq!(
+            receiver.receive().unwrap(),
+            Some(ChannelEvent::Message(payload))
+        );
+        assert_eq!(receiver.receive().unwrap(), None);
+    }
+
+    #[test]
+    fn atomic_fragment_backpressure_exposes_no_partial_message() {
+        let config = ChannelConfig {
+            capacity: 256,
+            maximum_inline_message: 32,
+            maximum_message: 80,
+            low_watermark: 64,
+            high_watermark: 240,
+        };
+        let (mut sender, mut receiver) = in_process_channel_with_config(config).unwrap();
+        let first = vec![1; 80];
+        sender.send(&first).unwrap();
+        assert_eq!(
+            sender.send(&[2; 80]).unwrap_err().code(),
+            ErrorCode::Backpressured
+        );
+        assert_eq!(
+            receiver.receive().unwrap(),
+            Some(ChannelEvent::Message(first))
+        );
+        assert_eq!(receiver.receive().unwrap(), None);
+    }
+
+    #[test]
+    fn fragmented_batch_wraps_with_padding_and_preserves_fifo() {
+        let config = ChannelConfig {
+            capacity: 512,
+            maximum_inline_message: 32,
+            maximum_message: 100,
+            low_watermark: 128,
+            high_watermark: 384,
+        };
+        let (mut sender, mut receiver) = in_process_channel_with_config(config).unwrap();
+        for value in 0_u8..8 {
+            let payload = [value; 32];
+            sender.send(&payload).unwrap();
+            assert_eq!(
+                receiver.receive().unwrap(),
+                Some(ChannelEvent::Message(payload.to_vec()))
+            );
+        }
+        let payload = (0_u8..100).rev().collect::<Vec<_>>();
+        sender.send(&payload).unwrap();
+        assert_eq!(
+            receiver.receive().unwrap(),
+            Some(ChannelEvent::Message(payload))
+        );
+        assert_eq!(receiver.receive().unwrap(), None);
+    }
+
+    #[test]
+    fn close_discards_an_incomplete_fragment() {
+        let config = ChannelConfig {
+            capacity: 256,
+            maximum_inline_message: 32,
+            maximum_message: 80,
+            low_watermark: 64,
+            high_watermark: 240,
+        };
+        let (mut sender, mut receiver) = in_process_channel_with_config(config).unwrap();
+        let fragmenter = Fragmenter::new(32, 80).unwrap();
+        let payload = vec![7; 80];
+        let fragments = fragmenter.fragments(&payload).unwrap();
+        sender
+            .writer
+            .send_fragments(RecordKind::Data, &fragments[..1])
+            .unwrap();
+        sender.close().unwrap();
+        assert_eq!(receiver.receive().unwrap(), Some(ChannelEvent::Closed));
+        assert!(!receiver.reassembler.is_pending());
+    }
+
+    #[test]
+    fn rejects_impossible_fragment_configuration() {
+        let result = in_process_channel_with_config(ChannelConfig {
+            capacity: 128,
+            maximum_inline_message: 32,
+            maximum_message: 80,
+            low_watermark: 32,
+            high_watermark: 96,
+        });
+        assert_eq!(result.err().unwrap().code(), ErrorCode::InvalidRange);
     }
 }

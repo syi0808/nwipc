@@ -38,6 +38,7 @@ nwipc-ring-writer = { version = "=0.0.0", path = "crates/data-plane/nwipc-ring-w
 nwipc-ring-reader = { version = "=0.0.0", path = "crates/data-plane/nwipc-ring-reader" }
 nwipc-flow-control = { version = "=0.0.0", path = "crates/data-plane/nwipc-flow-control" }
 nwipc-channel-core = { version = "=0.0.0", path = "crates/data-plane/nwipc-channel-core" }
+nwipc-fragment = { version = "=0.0.0", path = "crates/data-plane/nwipc-fragment" }
 nwipc-bootstrap-schema = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bootstrap-schema" }
 nwipc-bootstrap-codec = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bootstrap-codec" }
 nwipc-peer-bootstrap = { version = "=0.0.0", path = "crates/bootstrap/nwipc-peer-bootstrap" }

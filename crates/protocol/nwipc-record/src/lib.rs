@@ -81,7 +81,7 @@ impl RecordFlags {
     pub const NONE: Self = Self(0);
     /// This record ends a logical message.
     pub const END_OF_MESSAGE: Self = Self(1 << 0);
-    /// Fragment metadata is present. Negotiation keeps this disabled in the first slice.
+    /// Fragment metadata is present. Use requires the negotiated fragmentation capability.
     pub const FRAGMENTED: Self = Self(1 << 1);
     /// A protocol acknowledgement is requested.
     pub const ACK_REQUIRED: Self = Self(1 << 2);

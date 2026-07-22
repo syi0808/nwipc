@@ -73,14 +73,14 @@ TypeScript Client ─────────────┘
 
 ## Phase 8 — 확장
 
-1. Fragmentation
-2. Async/Tokio
-3. Wry
-4. Tauri
-5. Authentication/encryption
-6. Mach provider
-7. Chunk pool/borrowed API
-8. Bun/타 플랫폼
+1. [x] Fragmentation (data-plane integration)
+2. [ ] Async/Tokio
+3. [ ] Wry
+4. [ ] Tauri
+5. [ ] Authentication/encryption
+6. [ ] Mach provider
+7. [ ] Chunk pool/borrowed API
+8. [ ] Bun/타 플랫폼
 
 ## 최초 백로그
 

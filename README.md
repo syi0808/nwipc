@@ -5,7 +5,8 @@ NWIPC is an experimental, host-relay-free shared-memory IPC transport for a macO
 
 The repository includes its protocol wire foundation, in-process SPSC data plane, native
 two-process bootstrap, macOS memory/signal providers, renderer runtime, and the macOS WebKit
-control plane. The WebKit slice provides a fail-closed SPI probe, injected-bundle lifecycle and
+control plane. The data plane supports bounded, atomically published fragmentation with
+single-message reassembly. The WebKit slice provides a fail-closed SPI probe, injected-bundle lifecycle and
 panic boundaries, strict renderer bootstrap attachment, generation replacement, and deterministic
 bundle assembly/inspection. Unsupported OS/build combinations are reported explicitly.
 

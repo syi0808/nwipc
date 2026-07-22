@@ -26,9 +26,11 @@ impl TransportCapabilities {
     pub const BORROWED_SEND: Self = Self(1 << 6);
     /// Borrowed receive buffers are available.
     pub const BORROWED_RECEIVE: Self = Self(1 << 7);
+    /// Logical messages may span multiple data records.
+    pub const FRAGMENTATION: Self = Self(1 << 8);
 
     /// Mask of capabilities understood by this version.
-    pub const KNOWN: Self = Self((1 << 8) - 1);
+    pub const KNOWN: Self = Self((1 << 9) - 1);
 
     /// Preserves known and unknown bits received from a peer.
     pub const fn from_bits(bits: u64) -> Self {
@@ -215,6 +217,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(negotiated.capabilities().unknown_bits(), 1 << 48);
+    }
+
+    #[test]
+    fn negotiates_fragmentation_only_when_both_endpoints_enable_it() {
+        let negotiated = negotiate(
+            SupportedCapabilities::new(TransportCapabilities::FRAGMENTATION),
+            RequestedCapabilities::new(TransportCapabilities::FRAGMENTATION),
+            RequiredCapabilities::new(TransportCapabilities::FRAGMENTATION),
+        )
+        .unwrap();
+        assert!(
+            negotiated
+                .capabilities()
+                .contains(TransportCapabilities::FRAGMENTATION)
+        );
     }
 
     #[test]

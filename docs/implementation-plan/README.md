@@ -51,11 +51,12 @@ Phase 7 hardening: [security/unsafe audit](../security.md),
 
 후순위:
 
-- fragmentation/chunk pool, crypto, Mach provider
+- chunk pool, crypto, Mach provider
 - async/Tokio/Bun, Wry/Tauri
 - borrowed send/receive, Windows/Linux backend
 
-Fragmentation이 없는 동안 inline maximum을 넘는 message는 `MessageTooLarge`로 거부한다.
+Phase 8의 data-plane fragmentation은 완료했다. Production handshake가 fragmentation capability를
+협상하기 전까지 실제 WebKit transport는 inline message contract를 유지한다.
 
 ## 초기 설계 subset 보완
 

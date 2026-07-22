@@ -60,6 +60,7 @@ dependencies = [
  "nwipc-atomic",
  "nwipc-error",
  "nwipc-flow-control",
+ "nwipc-fragment",
  "nwipc-record",
  "nwipc-ring-reader",
  "nwipc-ring-writer",
@@ -90,6 +91,16 @@ name = "nwipc-flow-control"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+]
+
+[[package]]
+name = "nwipc-fragment"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+ "nwipc-layout",
+ "nwipc-record",
+ "nwipc-types",
 ]
 
 [[package]]
@@ -322,6 +333,7 @@ version = "0.0.0"
 dependencies = [
  "nwipc-atomic",
  "nwipc-error",
+ "nwipc-fragment",
  "nwipc-layout",
  "nwipc-record",
  "nwipc-ring-core",

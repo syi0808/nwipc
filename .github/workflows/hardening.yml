@@ -18,6 +18,7 @@ jobs:
       - run: cargo +nightly miri test -p nwipc-ring-core
       - run: cargo +nightly miri test -p nwipc-ring-writer
       - run: cargo +nightly miri test -p nwipc-ring-reader borrows_then_consumes
+      - run: cargo +nightly miri test -p nwipc-fragment
       - run: cargo +nightly miri test -p nwipc-channel-core dropped_signal
 
   address-sanitizer:
@@ -30,7 +31,7 @@ jobs:
           cargo +nightly test --target x86_64-unknown-linux-gnu
           -p nwipc-layout -p nwipc-record -p nwipc-bootstrap-codec
           -p nwipc-atomic -p nwipc-ring-core -p nwipc-ring-writer
-          -p nwipc-ring-reader -p nwipc-channel-core
+          -p nwipc-ring-reader -p nwipc-fragment -p nwipc-channel-core
 
   fuzz-smoke:
     runs-on: ubuntu-latest
@@ -41,3 +42,4 @@ jobs:
       - run: cargo +nightly fuzz run record -- -max_total_time=30
       - run: cargo +nightly fuzz run bootstrap -- -max_total_time=30
       - run: cargo +nightly fuzz run layout -- -max_total_time=30
+      - run: cargo +nightly fuzz run fragment -- -max_total_time=30

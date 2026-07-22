@@ -55,7 +55,7 @@ macOS E2E 산출물은 nested code부터 outer app 순서로 `--options runtime`
 ## 도구 범위
 
 - Stable CI: workspace test/clippy, architecture/unsafe baseline, process crash/replacement matrix
-- Fuzz: record/bootstrap/layout arbitrary bytes와 committed regression corpus
+- Fuzz: record/bootstrap/layout arbitrary bytes, fragment state transition과 committed regression corpus
 - Miri: platform-independent atomic/ring/channel crates; macOS FFI와 child-process E2E 제외
 - AddressSanitizer: protocol/bootstrap/data-plane/testkit의 Linux test target; JSC/WebKit FFI 제외
 - Hardened E2E: allowlisted macOS arm64에서 실제 bundle, IOSurface echo, WebContent replacement

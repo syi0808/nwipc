@@ -4,7 +4,7 @@
 
 | 범위 | OS/architecture | 상태 | 검증 |
 |---|---|---|---|
-| Domain, wire codec, in-process data plane, renderer core | Linux/macOS, x86_64/arm64 | 지원 | stable workspace CI, fixture, stress, fuzz |
+| Domain, wire codec, fragmented in-process data plane, renderer core | Linux/macOS, x86_64/arm64 | 지원 | stable workspace CI, fixture, stress, fuzz |
 | Native process-test peer | Linux/macOS, x86_64/arm64 | 실험적 | child echo, partial bootstrap, timeout, kill/reap, replacement |
 | IOSurface + Darwin Notify provider | macOS arm64 | 실험적 | provider contract와 two-process tests |
 | JSC binding | macOS arm64 | 실험적 | callback/teardown contract; signed E2E에서 load |
@@ -32,8 +32,9 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 
 ## 알려진 제한
 
-- Fragmentation, encryption/authentication, async API, reconnect policy는 아직 없다.
-- Inline payload 상한은 1 MiB이며 초과 입력은 `MessageTooLarge`다.
+- Data-plane fragmentation은 지원하지만 production WebKit handshake 연결은 아직 없다.
+- Record inline payload 상한은 1 MiB이고 논리 메시지 상한은 채널 생성 시 ring 범위 안에서 설정한다.
+- Encryption/authentication, async API, reconnect policy는 아직 없다.
 - Production ring/record handshake를 사용하는 WebKit echo와 origin별 binding policy는 아직 없다.
 - Developer ID notarization/stapling과 macOS minor-release/x86_64 matrix는 아직 없다.
 - Benchmark 수치는 machine-specific baseline이며 회귀 임계값으로 사용하기 전에 같은 runner에서

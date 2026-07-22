@@ -1,12 +1,13 @@
 # Data-plane 모듈 구현계획
 
-> 구현 상태: Phase 2의 in-process provider, atomic publication, ring reader/writer, flow control,
-> bidirectional channel과 signal fault-injection 검증을 완료했다. OS-backed mapping과 실제 signal
-> provider 연결은 후속 phase에서 같은 cursor/channel contract를 사용한다.
+> 구현 상태: Phase 2의 in-process provider와 Phase 8의 bounded fragmentation, atomic batch
+> publication, single-message reassembly를 완료했다. OS-backed mapping과 실제 signal provider
+> 연결은 후속 phase에서 같은 cursor/channel contract를 사용한다.
 
 ## 범위
 
-대상은 `nwipc-atomic`, `nwipc-ring-core`, `nwipc-ring-writer`, `nwipc-ring-reader`, `nwipc-flow-control`, `nwipc-channel-core`다. In-process fake provider로 먼저 완성한다.
+대상은 `nwipc-atomic`, `nwipc-ring-core`, `nwipc-ring-writer`, `nwipc-ring-reader`,
+`nwipc-fragment`, `nwipc-flow-control`, `nwipc-channel-core`다. In-process fake provider로 먼저 완성한다.
 
 ## `nwipc-atomic`
 
@@ -82,6 +83,23 @@
 - Watermark boundary
 - Fixed capacity invariant
 
+## `nwipc-fragment`
+
+구현:
+
+- `FRAGMENTED`/`END_OF_MESSAGE` 기반 START/CONTINUE/END
+- 동일 message ID와 한 방향당 단일 incomplete message
+- 설정 가능한 inline/logical maximum과 checked 누적 크기
+- Close/Reset/generation replacement 시 partial message 폐기
+- 전체 fragment batch 검증 후 producer cursor 단일 publication
+
+검증:
+
+- Inline 경계, exact multiple, 마지막 short fragment
+- Interleaving, 잘못된 flag/ID, 누적 크기 초과 거부
+- Capacity 부족과 writer crash에서 partial publication 없음
+- Arbitrary state transition fuzzing
+
 ## `nwipc-channel-core`
 
 구현:
@@ -100,7 +118,8 @@
 
 ## 후순위
 
-Fragmentation, chunk pool, authentication/encryption, borrowed receive는 첫 slice 이후다. 그 전에는 inline maximum을 초과한 send를 거부한다.
+Chunk pool, authentication/encryption, borrowed receive는 후속 Phase 8 범위다. Production
+handshake에서 fragmentation capability를 연결하기 전에는 해당 transport의 inline maximum을 유지한다.
 
 ## 완료 기준
 

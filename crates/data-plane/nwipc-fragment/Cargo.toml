@@ -1,5 +1,5 @@
 [package]
-name = "nwipc-channel-core"
+name = "nwipc-fragment"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,16 +11,10 @@ stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
-nwipc-atomic.workspace = true
 nwipc-error.workspace = true
-nwipc-flow-control.workspace = true
-nwipc-fragment.workspace = true
+nwipc-layout.workspace = true
 nwipc-record.workspace = true
-nwipc-ring-reader.workspace = true
-nwipc-ring-writer.workspace = true
-
-[dev-dependencies]
-nwipc-testkit = { path = "../../testing/nwipc-testkit" }
+nwipc-types.workspace = true
 
 [lints]
 workspace = true

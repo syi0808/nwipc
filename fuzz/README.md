@@ -1,12 +1,13 @@
 # Fuzz targets
 
-The three fail-closed wire decoders are exercised directly:
+The fail-closed wire decoders and fragment state machine are exercised directly:
 
 ```sh
 cargo install cargo-fuzz --locked
 cargo fuzz run record -- -max_total_time=60
 cargo fuzz run bootstrap -- -max_total_time=60
 cargo fuzz run layout -- -max_total_time=60
+cargo fuzz run fragment -- -max_total_time=60
 ```
 
 Committed seeds cover magic prefixes, truncation, and the record golden fixture shape. CI performs
