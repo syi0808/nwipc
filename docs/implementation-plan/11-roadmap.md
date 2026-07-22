@@ -3,14 +3,34 @@
 ## 선행 관계
 
 ```text
-Domain → Layout/Record → Validation/Protocol → Atomic/Ring → Channel
-Memory API → IOSurface ─┐
-Signal API → Darwin  ───┼→ Bootstrap/Peer → Runtime
-Channel ────────────────┘
-Renderer Core → JSC ───────────┐
-Runtime + SPI + Bundle ────────┼→ AppKit E2E
-TypeScript Client ─────────────┘
+Domain → Layout/Record → Validation/Protocol ─┐
+Atomic/Ring/Fragment/Channel ─────────────────┼→ Provider-neutral transport
+Memory API → IOSurface ───────────────────────┤
+Signal API → Darwin/Poll/Hybrid ──────────────┘
+
+Bootstrap schema/codec → Session machine → Runtime ─────┐
+Provider-neutral transport → Peer/Renderer endpoint ────┼→ Public facade
+Renderer Core → JSC → Bundle/SPI ───────────────────────┘
+
+Public facade + AppKit host + TypeScript client → Production WebKit E2E
 ```
+
+## 상태 판정 규칙
+
+로드맵의 상태는 코드 존재 여부가 아니라 실제 호출 경로와 검증 수준으로 판정한다.
+
+| 상태 | 의미 |
+|---|---|
+| 미착수 | 공개 contract와 구현이 아직 없다. |
+| 경계 정의 | Type/API는 있으나 operational path가 typed `Unsupported`를 반환한다. |
+| 단위 완료 | Fake/in-process provider 위에서 기능과 failure contract가 검증된다. |
+| Provider 통합 | 실제 OS/process provider의 독립 contract test가 통과한다. |
+| Production 통합 | Public facade에서 protocol, runtime, data plane, provider가 우회 없이 연결된다. |
+| E2E 검증 | 지원 대상의 signed/hardened process에서 production 통합 경로가 통과한다. |
+
+Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 하위 계층 검증에는 사용할
+수 있지만 Production 통합이나 E2E 검증의 근거로 삼지 않는다. Phase와 backlog의 `[x]`는 해당 범위의
+완료 정의, committed artifact, clean CI 증거가 모두 있을 때만 사용한다.
 
 ## Phase 0 — 저장소 기반과 결정 기록
 
@@ -19,49 +39,49 @@ TypeScript Client ─────────────┘
 - Layout/cursor/memory ordering/bootstrap/IOSurface/WebKit ADR
 - Architecture dependency check
 
-완료: 첫-slice skeleton compile, core CI 통과, 금지 dependency/unsafe 탐지.
+기존 완료 기준: 첫-slice skeleton compile, core CI 통과, 금지 dependency/unsafe 탐지.
 
 ## Phase 1 — Protocol foundation
 
 - Domain, layout, record, protocol, validation
 - Golden fixture, property test, fuzz harness
 
-완료: Cross-architecture fixture 일치, arbitrary decode panic 없음, mismatch typed error.
+기존 완료 기준: Cross-architecture fixture 일치, arbitrary decode panic 없음, mismatch typed error.
 
 ## Phase 2 — In-process data plane
 
 - Atomic, ring, flow, channel
 - Fake memory/signal과 fault injection
 
-완료: 양방향 FIFO/backpressure, crash-safe publication, lost signal progress.
+기존 완료 기준: 양방향 FIFO/backpressure, crash-safe publication, lost signal progress.
 
 ## Phase 3 — Native two-process
 
 - Bootstrap schema/codec/pipe
 - Peer core/facade와 process harness
 
-완료: Parent/child echo, partial bootstrap와 crash cleanup, stale generation 거부.
+기존 완료 기준: Parent/child echo, partial bootstrap와 crash cleanup, stale generation 거부.
 
 ## Phase 4 — macOS providers
 
 - IOSurface
 - Darwin Notify, polling, hybrid
 
-완료: 두 process raw bytes/notification, dropped signal recovery, provider diagnostics.
+기존 완료 기준: 두 process raw bytes/notification, dropped signal recovery, provider diagnostics.
 
 ## Phase 5 — Renderer runtime
 
 - Renderer API/core, JSC
 - TypeScript packages와 mock binding
 
-완료: WebKit 없는 state test, JSC contract, stale document invalidation.
+기존 완료 기준: WebKit 없는 state test, JSC contract, stale document invalidation.
 
 ## Phase 6 — WebKit/AppKit vertical slice
 
 - SPI/host, bundle/shim/artifact
 - AppKit example와 native peer
 
-완료: Host relay 없는 양방향 echo, reload/kill generation replacement, unsupported 명시.
+기존 완료 기준: Host relay 없는 양방향 echo, reload/kill generation replacement, unsupported 명시.
 
 ## Phase 7 — Hardening
 
@@ -69,7 +89,7 @@ TypeScript Client ─────────────┘
 - Unsafe audit, threat model, signed/hardened build
 - Benchmark baseline과 support matrix
 
-완료: Deadlock/OOB/stale delivery 없음, crash matrix 통과, 제한 문서화.
+기존 완료 기준: Deadlock/OOB/stale delivery 없음, crash matrix 통과, 제한 문서화.
 
 ## Phase 8 — 확장
 
@@ -82,18 +102,23 @@ TypeScript Client ─────────────┘
 7. [ ] Chunk pool/borrowed API
 8. [ ] Bun/타 플랫폼
 
-## 최초 백로그
+Phase 8 항목은 production vertical slice의 통합 경로가 닫힌 뒤 착수한다. 이미 완료된 fragmentation도
+production handshake가 capability를 협상하기 전까지 WebKit transport에서는 활성화하지 않는다.
+
+## 최초 백로그 상태
 
 P0:
 
 - [x] Cargo/pnpm workspace, toolchain, lint, deny, license
 - [x] First-slice skeleton과 architecture check
 - [x] Domain contract와 layout/record ADR
-- [ ] Protocol fixture와 fake provider
+- [x] Layout/record fixture와 fake memory/signal provider
+- [ ] Protocol/handshake fixture
 
 P1:
 
-- [ ] Layout/record/validation/handshake
+- [x] Layout/record
+- [ ] Validation/protocol handshake
 - [x] Atomic/ring/flow/channel
 - [x] Data-plane boundary/concurrency test와 in-process echo
 
@@ -116,23 +141,145 @@ P4:
 - [x] Stress/crash/fuzz와 sanitizer/Miri 자동화
 - [x] Benchmark baseline과 support/failure matrix
 
+## 현재 재기준선
+
+| 영역 | 현재 상태 | 남은 production gap |
+|---|---|---|
+| Domain, layout, record | 단위 완료 | Protocol/validation 단일 진입점과 handshake 연결 |
+| Ring, flow, channel, fragmentation | 단위 완료 | OS mapping/signal adapter와 capability 협상 연결 |
+| IOSurface, Darwin, polling/hybrid | Provider 통합 | 공통 channel contract를 사용하는 양방향 transport 조립 |
+| Bootstrap schema/codec | 단위 완료 | Runtime resource ownership과 실제 provider descriptor 수명 연결 |
+| Peer core/facade | 단위 완료 | Process-test stream 대신 IOSurface/signal transport attach |
+| Session, session machine, runtime | 경계 정의 | Registry, generation 교체, cleanup side effect, provider selection |
+| Renderer core, JSC, WebKit control plane | Provider 통합 | Renderer bootstrap에서 production channel 생성 |
+| WebKit process smoke | Provider 통합 | Raw echo frame 대신 public renderer↔peer transport 사용 |
+| Diagnostics, metrics, top-level facade | 경계 정의 | Operational snapshot, counter, public configuration/session API |
+
+독립 provider와 signed WebKit smoke는 실제 환경 가능성을 검증했지만 전체 product call graph의 완료를
+의미하지 않는다. 다음 milestone은 새로운 provider나 framework 확장보다 production 경로 폐쇄를 우선한다.
+
+## Production vertical slice 통합 milestone
+
+### M0 — Baseline 안정화
+
+- 완료된 fragmentation을 포함한 현재 workspace를 format/clippy/test/fuzz가 통과하는 baseline으로 고정
+- JSC lifecycle test의 반복 실행 안정성 확보
+- Roadmap 상태와 committed code/CI 결과 동기화
+
+완료: Core/TypeScript/hardening CI가 clean worktree에서 반복 가능하게 통과하고 flaky failure가 없다.
+
+### M1 — Protocol과 validation 폐쇄
+
+- `nwipc-protocol`에 version/capability 협상과 HELLO/ACK state machine 구현
+- `nwipc-validation`에 layout/cursor/record/payload 검증 단일 진입점 구현
+- Peer와 renderer가 공통 handshake와 stable error mapping 사용
+- Protocol/bootstrap golden fixture, property test, arbitrary-input fuzz 추가
+
+완료: 두 crate의 production path에서 placeholder `Unsupported`가 제거되고 malformed input이 mapping
+범위 접근 전에 stable typed error로 거부된다.
+
+### M2 — Session과 runtime ownership
+
+- `nwipc-session`에 identity, generation, prepared resource, endpoint 상태와 idempotent cleanup 구현
+- `nwipc-session-machine`에 transition별 resource/lifecycle side effect 구현
+- `nwipc-runtime`에 registry, ID/generation 발급, provider selection, replacement routing 구현
+- Partial attach, endpoint exit, duplicate close, multi-session isolation 검증
+
+완료: Runtime이 generation의 준비부터 교체/종료까지 control plane을 소유하고 old generation의 mapping,
+signal, port, callback이 다음 generation에서 재사용되지 않는다.
+
+### M3 — Provider-neutral production transport
+
+- OS `MappedRegion`을 atomic cursor와 ring reader/writer에 안전하게 연결
+- 방향별 IOSurface와 Darwin/hybrid signal을 channel adapter로 조립
+- Fake provider와 IOSurface/Darwin provider에 동일 transport contract suite 적용
+- Fragmentation capability와 negotiated message limit을 production handshake에 연결
+
+완료: 실제 provider 위에서 FIFO, boundary, backpressure, atomic batch publication, close/reset, dropped-signal
+recovery가 같은 channel API로 동작한다.
+
+### M4 — Public facade와 endpoint 통합
+
+- `nwipc` facade에 configuration, runtime/session, diagnostics 접근 API 구현
+- `nwipc-peer`가 inherited bootstrap에서 실제 memory/signal descriptor를 attach
+- stdin/pipe는 bootstrap에만 사용하고 application payload에서는 제거
+- Renderer transport factory가 bootstrap resource로 같은 production channel 생성
+- Endpoint core는 executor/thread/process를 소유하지 않는 synchronous contract를 유지하고 runtime adapter가
+  wire protocol을 재구현하지 않도록 한다.
+
+완료: Public renderer와 peer API가 provider 세부사항을 노출하지 않고 send/receive/backpressure/close를
+수행하며 top-level facade의 지원 경로에서 placeholder `Unsupported`가 없다. 새로운 runtime adapter는
+endpoint contract와 lifecycle/wakeup bridge만 구현하면 된다.
+
+### M5 — Production WebKit E2E
+
+- Raw `EchoFrame`/mapping polling을 production protocol/channel transport로 교체
+- Zero/exact/max/fragmented binary payload와 saturation/writable recovery 검증
+- Dropped/duplicate/delayed notification과 polling recovery 검증
+- Commit 전후 writer crash, peer/WebContent kill, reload와 generation replacement 검증
+- Host가 lifecycle과 completion만 관찰하고 payload byte에는 접근하지 않음을 구조적으로 검사
+
+완료: Signed/hardened AppKit harness에서 public renderer↔peer 경로가 host relay 없이 통과하고 stale
+message, callback, resource가 새 generation에 전달되지 않는다.
+
+### M6 — Observability와 release gate
+
+- Session/generation/state/topology/backend/capability snapshot 구현
+- Bytes/messages/backpressure/wakeup/coalescing/polling recovery/failure counter 구현
+- Payload, secret, native handle을 제외하는 redaction schema와 snapshot compatibility 규칙 확정
+- arm64/x86_64 fixture, sanitizer/Miri/fuzz, actual-provider benchmark, signed E2E CI 범위 명시
+
+완료: Failure matrix의 각 case에서 diagnostics만으로 backend/state/stable error/cleanup 결과를 식별할 수
+있고 전체 release gate가 통과한다.
+
 ## Vertical slice 완료 정의
 
+Foundation:
+
 1. Core가 macOS SDK 없이 compile/test된다.
-2. Layout fixture가 arm64/x86_64에서 동일하다.
-3. Ring이 FIFO, boundary, backpressure, crash tests를 통과한다.
-4. Arbitrary input이 panic/OOB를 만들지 않는다.
+2. Layout/protocol/bootstrap fixture가 arm64/x86_64에서 동일하다.
+3. Ring이 FIFO, boundary, backpressure, fragmentation, crash tests를 통과한다.
+4. Arbitrary layout/record/protocol/bootstrap input이 panic/OOB를 만들지 않는다.
 5. IOSurface/Darwin이 두 process 사이에서 독립 검증된다.
 6. Signal 유실을 polling이 회복한다.
-7. Peer가 WebView dependency 없이 동작한다.
-8. Renderer core가 JSC/WebKit 없이 테스트된다.
-9. JSC teardown 뒤 callback/protected object가 남지 않는다.
-10. Bundle은 main frame normal world에만 binding을 설치한다.
-11. Renderer↔peer가 host relay 없이 binary echo를 수행한다.
-12. Reload/crash 뒤 stale generation message가 전달되지 않는다.
-13. Failure는 structured error/diagnostics로 보인다.
-14. Silent fallback/no-op가 없다.
-15. Unsafe/dependency/license/lint/test/package CI가 통과한다.
+
+Lifecycle/API:
+
+7. Runtime이 multi-session registry, generation 교체, resource cleanup을 수행한다.
+8. Peer가 WebView dependency와 payload stream fallback 없이 동작한다.
+9. Renderer core가 JSC/WebKit 없이 테스트된다.
+10. JSC teardown 뒤 callback/protected object가 남지 않는다.
+11. Bundle은 main frame normal world에만 binding을 설치한다.
+12. Public facade가 지원 provider에서 session 생성부터 close까지 수행한다.
+
+Production E2E:
+
+13. Renderer와 peer가 공통 protocol/channel 및 IOSurface/Darwin transport를 사용한다.
+14. Renderer↔peer가 host relay 없이 binary echo와 backpressure recovery를 수행한다.
+15. E2E는 testkit 전용 frame, raw mapping 또는 payload stream으로 production 계층을 우회하지 않는다.
+16. Reload/peer crash/WebContent crash 뒤 stale generation message와 callback이 전달되지 않는다.
+17. Commit 전후 crash와 dropped/duplicate/delayed signal의 failure matrix가 실제 process에서 통과한다.
+
+Operations:
+
+18. Failure는 structured error와 redacted operational diagnostics로 보인다.
+19. Silent fallback, 성공하는 no-op, 지원 경로의 placeholder `Unsupported`가 없다.
+20. Unsafe/dependency/license/format/lint/test/package/fuzz/sanitizer CI가 통과한다.
+21. 각 완료 항목은 test 이름, CI job, 지원 matrix와 추적 가능하다.
+
+## 완료 증거와 추적성
+
+각 milestone은 완료 선언과 함께 다음 표를 갱신한다.
+
+| 완료 항목 | Production artifact | Contract/process test | CI job | 지원 조합/제한 |
+|---|---|---|---|---|
+| 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
+
+- Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
+- 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.
+- Public facade에서 도달할 수 없는 구현은 Production 통합으로 보지 않는다.
+- Manual E2E는 실행 OS/build/signing identity와 artifact/log 위치를 남긴다.
+- 완료 정의를 변경하면 해당 protocol/layout/schema version과 support matrix 영향을 함께 기록한다.
 
 ## 구현 전 ADR 결정
 
@@ -153,16 +300,14 @@ P4:
 
 Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface와 WebKit SPI는 실행 실험으로 가능성을 확인한 뒤 production API를 고정한다.
 
-## 권장 착수 순서
+## 현재 권장 착수 순서
 
-1. Workspace/architecture check
-2. Domain/layout/record/validation
-3. Golden fixture/property test
-4. Fake provider 위 atomic/ring/channel
-5. In-process echo와 crash/signal-loss test
-6. Bootstrap/peer two-process echo
-7. IOSurface/Darwin 교체
-8. Renderer core/TS mock 완성
-9. JSC/bundle stub
-10. Host/AppKit E2E
-11. Reload/crash/replacement hardening
+1. Clean CI baseline과 JSC flaky 제거
+2. Protocol/validation/handshake 구현
+3. Session/session-machine/runtime ownership 구현
+4. IOSurface/Darwin production channel adapter 구현
+5. Public facade와 peer/renderer transport 연결
+6. WebKit E2E를 production path로 교체
+7. Diagnostics/metrics와 failure snapshot 구현
+8. Cross-architecture/property/fuzz/process CI 강화
+9. 남은 Phase 8 확장 재개
