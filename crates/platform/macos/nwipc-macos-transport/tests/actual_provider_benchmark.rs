@@ -13,7 +13,7 @@ use nwipc_macos_transport::{
 };
 
 #[test]
-#[ignore = "release-gate benchmark using actual IOSurface and Darwin providers"]
+#[ignore = "release-gate benchmark using actual Mach providers"]
 fn actual_provider_round_trip_baseline() {
     let session_id = SessionId::from_u128(1).unwrap();
     let generation = Generation::new(1).unwrap();
@@ -44,7 +44,7 @@ fn actual_provider_round_trip_baseline() {
     .unwrap();
 
     println!(
-        "provider=IOSurface+Darwin/hybrid os={} architecture={} capacity={}",
+        "provider=Mach-memory+Mach-port os={} architecture={} capacity={}",
         std::env::consts::OS,
         std::env::consts::ARCH,
         configuration.capacity

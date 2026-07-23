@@ -130,7 +130,7 @@ impl ResourcePreparer for MacosPreparer {
         generation: Generation,
         providers: ProviderSelection,
     ) -> Result<PreparedResources, ErrorReport> {
-        if providers != ProviderSelection::MACOS {
+        if providers != ProviderSelection::MACH {
             return Err(configuration_error(
                 ErrorCode::Unsupported,
                 "public provider selection",
@@ -430,7 +430,7 @@ impl Nwipc {
     ///
     /// # Errors
     ///
-    /// Returns explicit `Unsupported` when `IOSurface`/Darwin providers are unavailable.
+    /// Returns explicit `Unsupported` when Mach providers are unavailable.
     pub fn initialize() -> Result<Self, ErrorReport> {
         Self::with_configuration(Configuration::default())
     }
@@ -450,7 +450,7 @@ impl Nwipc {
         };
         Ok(Self {
             configuration,
-            runtime: Runtime::new(ProviderSelection::MACOS, preparer),
+            runtime: Runtime::new(ProviderSelection::MACH, preparer),
             catalog,
             metrics: Metrics::new(),
             observations: Arc::new(Mutex::new(HashMap::new())),
@@ -782,8 +782,8 @@ fn diagnostic_entry(
         state: observation.state,
         topology: TransportTopology::direct(),
         capabilities: production_capabilities(),
-        memory_backend: DiagnosticMemoryBackend::IoSurface,
-        signal_backend: DiagnosticSignalBackend::Hybrid,
+        memory_backend: DiagnosticMemoryBackend::Mach,
+        signal_backend: DiagnosticSignalBackend::Mach,
         last_error: observation.last_failure.map(|failure| failure.code),
         last_failure: observation.last_failure,
         resources_cleaned: observation.cleanup == CleanupStatus::Complete,
@@ -930,6 +930,13 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn public_runtime_selects_mach_without_fallback() {
+        let nwipc = Nwipc::initialize().unwrap();
+        assert_eq!(nwipc.runtime.providers(), ProviderSelection::MACH);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn renderer_bootstrap_is_canonical_and_one_shot() {
         let mut nwipc = Nwipc::initialize().unwrap();
         let mut session = nwipc.create_session().unwrap();
@@ -1012,6 +1019,7 @@ mod tests {
             generation: session.generation(),
             protocol: session.protocol,
         };
+        let fragmented = vec![0x5a; Configuration::default().maximum_inline_message as usize + 1];
         let mut bootstrap = Vec::new();
         session.write_peer_bootstrap(&mut bootstrap).unwrap();
         let peer = std::thread::spawn(move || {
@@ -1025,14 +1033,16 @@ mod tests {
                 production_capabilities(),
             )
             .unwrap();
-            loop {
-                match port.try_receive().unwrap() {
-                    Some(PortEvent::Message(payload)) => {
-                        port.try_send(&payload).unwrap();
-                        break;
+            for _ in 0..2 {
+                loop {
+                    match port.try_receive().unwrap() {
+                        Some(PortEvent::Message(payload)) => {
+                            port.try_send(&payload).unwrap();
+                            break;
+                        }
+                        Some(PortEvent::Closed) => panic!("renderer closed before request"),
+                        None => std::thread::yield_now(),
                     }
-                    Some(PortEvent::Closed) => panic!("renderer closed before request"),
-                    None => std::thread::yield_now(),
                 }
             }
             loop {
@@ -1062,6 +1072,22 @@ mod tests {
                 b"production".to_vec()
             ))
         );
+        assert_eq!(
+            renderer.send(&fragmented).unwrap(),
+            nwipc_renderer_api::SendDisposition::Sent
+        );
+        let fragmented_response = (0..100).find_map(|_| {
+            if let Some(event) = renderer.poll().unwrap() {
+                Some(event)
+            } else {
+                std::thread::sleep(Duration::from_millis(1));
+                None
+            }
+        });
+        assert_eq!(
+            fragmented_response,
+            Some(nwipc_renderer_api::TransportEvent::Message(fragmented))
+        );
         let error = renderer
             .send(&vec![
                 0;
@@ -1075,11 +1101,20 @@ mod tests {
             nwipc.session_diagnostics(&session).unwrap().state,
             SessionState::Open
         );
+        let provider_diagnostics = nwipc.session_diagnostics(&session).unwrap();
+        assert_eq!(
+            provider_diagnostics.memory_backend,
+            DiagnosticMemoryBackend::Mach
+        );
+        assert_eq!(
+            provider_diagnostics.signal_backend,
+            DiagnosticSignalBackend::Mach
+        );
         nwipc.close(&session).unwrap();
         let diagnostics = nwipc.diagnostics();
         assert!(diagnostics.sessions[0].resources_cleaned);
-        assert_eq!(diagnostics.metrics.messages_sent, 1);
-        assert_eq!(diagnostics.metrics.messages_received, 1);
+        assert_eq!(diagnostics.metrics.messages_sent, 2);
+        assert_eq!(diagnostics.metrics.messages_received, 2);
         assert_eq!(diagnostics.metrics.failures, 1);
         assert_eq!(
             diagnostics.sessions[0].last_failure,
