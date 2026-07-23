@@ -2,7 +2,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Output};
+use std::process::ExitCode;
 use std::time::Instant;
 
 use nwipc_channel_core::{ChannelEvent, in_process_channel};
@@ -10,6 +10,8 @@ use nwipc_error::ErrorCode;
 
 #[cfg(target_os = "macos")]
 use std::io::Write;
+#[cfg(target_os = "macos")]
+use std::process::{Command, Output};
 
 const UNSAFE_CRATES: &[&str] = &[
     "nwipc-atomic",
@@ -744,6 +746,7 @@ fn write_peer_logs(work: &Path, scenario: &str, output: &Output) -> Result<(), S
     .map_err(|error| error.to_string())
 }
 
+#[cfg(target_os = "macos")]
 fn encode_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
 
@@ -885,6 +888,7 @@ fn require_export(binary: &Path, symbol: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn recreate_directory(path: &Path) -> Result<(), String> {
     if path.exists() {
         fs::remove_dir_all(path).map_err(|error| error.to_string())?;
@@ -892,6 +896,7 @@ fn recreate_directory(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|error| error.to_string())
 }
 
+#[cfg(target_os = "macos")]
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
     fs::create_dir_all(destination).map_err(|error| error.to_string())?;
     for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
@@ -910,12 +915,14 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn run_checked(command: &mut Command, operation: &str) -> Result<(), String> {
     let output = run_output(command, operation)?;
     print_output(&output);
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn run_output(command: &mut Command, operation: &str) -> Result<Output, String> {
     let output = command
         .output()
@@ -930,6 +937,7 @@ fn run_output(command: &mut Command, operation: &str) -> Result<Output, String> 
     Ok(output)
 }
 
+#[cfg(target_os = "macos")]
 fn print_output(output: &Output) {
     print!("{}", String::from_utf8_lossy(&output.stdout));
     eprint!("{}", String::from_utf8_lossy(&output.stderr));

@@ -112,6 +112,7 @@ pub fn initialization_failed() -> bool {
 /// `WebKit` injected-bundle entrypoint. Raw `WebKit` values remain in the shim and are never
 /// dereferenced by portable Rust.
 #[cfg_attr(target_os = "macos", unsafe(no_mangle))]
+#[allow(non_snake_case)]
 pub extern "C" fn WKBundleInitialize(bundle: *mut c_void, _user_data: *mut c_void) {
     if catch_unwind(AssertUnwindSafe(|| {
         configure_e2e(bundle);

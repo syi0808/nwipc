@@ -928,7 +928,7 @@ mod platform {
 
 #[cfg(not(target_os = "macos"))]
 mod platform {
-    use super::*;
+    use super::{DocumentGeneration, ErrorReport, JscContext, TransportFactory};
 
     pub(super) fn install(
         _context: JscContext,
