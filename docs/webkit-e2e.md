@@ -13,7 +13,7 @@ navigation/lifecycle, bundle load, echo completion notification뿐이며 payload
 
 ### Tier 1 — 계약 테스트
 
-- SPI allowlist와 required selector probe
+- exact-build 검증 상태와 required selector viability probe
 - Main-frame/normal-world 판별
 - Renderer bootstrap fail-closed와 partial attach cleanup
 - Reload/kill generation replacement와 stale generation 거부
@@ -47,7 +47,8 @@ cargo xtask webkit-e2e
 
 ## 선행 조건
 
-- macOS 26.2 arm64와 repository SPI allowlist가 일치해야 한다.
+- 검증 증거를 등록할 때는 macOS 26.2 (25C56) arm64와 repository의
+  `VERIFIED_SYSTEMS`가 일치해야 한다. 다른 실행 가능한 시스템에서도 E2E 자체는 수행할 수 있다.
 - Xcode command line tools, macOS SDK, `clang`, `codesign`, `security`가 필요하다.
 - Trusted mode는 `security find-identity -v -p codesigning`에 identity가 보여야 한다.
 - App sandbox entitlement는 사용하지 않는다. `WebContent` sandbox는 WebKit이 소유한다.

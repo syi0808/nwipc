@@ -22,7 +22,7 @@ native handle이다. Host는 descriptor와 lifecycle만 전달하며 payload dat
 | IOSurface ID 노출 | descriptor 크기/generation/mapping 범위 검사, HKDF 방향키, XChaCha20-Poly1305 frame protection | metadata traffic analysis와 descriptor 보유자의 denial of service 가능 |
 | payload tamper/replay | session/generation/counter AAD, strict FIFO replay validation, AEAD fail closed | compromised endpoint는 자기 generation의 key를 보유 |
 | payload/secret log 유출 | typed/redacted error operation만 노출, E2E log에 payload 미기록 | 애플리케이션 callback logging은 범위 밖 |
-| private WebKit SPI 변경 | OS allowlist와 required selector runtime probe, fail closed | allowlisted release의 patch update도 실제 E2E 재검증 필요 |
+| private WebKit SPI 변경 | required selector runtime probe와 exact-build 검증 상태 분리 | `BestEffort` 환경의 동작과 오류는 보장하지 않으며 실제 E2E 재검증 필요 |
 
 Descriptor만 노출된 process는 application payload를 읽거나 위조할 수 없다. 그러나 inherited
 bootstrap pipe 또는 endpoint process가 손상되면 해당 generation의 secret과 key도 노출된다. 서로
@@ -63,7 +63,8 @@ macOS E2E 산출물은 nested code부터 outer app 순서로 `--options runtime`
 - Fuzz: record/bootstrap/layout/crypto arbitrary bytes, fragment state transition과 committed regression corpus
 - Miri: platform-independent atomic/ring/channel crates; macOS FFI와 child-process E2E 제외
 - AddressSanitizer: protocol/bootstrap/data-plane/testkit의 Linux test target; JSC/WebKit FFI 제외
-- Hardened E2E: allowlisted macOS arm64에서 실제 bundle, IOSurface echo, WebContent replacement
+- Hardened E2E: runtime-compatible macOS에서 실제 bundle, IOSurface echo, WebContent replacement;
+  release 증거는 exact OS build/architecture 단위
 
 Miri와 sanitizer가 cross-process memory ordering이나 WebKit sandbox 동작을 증명하지는 않는다.
 그 경계는 provider contract와 signed process E2E를 함께 통과해야 한다.

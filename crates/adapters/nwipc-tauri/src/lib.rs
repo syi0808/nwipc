@@ -8,7 +8,7 @@ use nwipc_capabilities::TransportTopology;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_artifact::MacosArtifact;
 use nwipc_macos_host::{MacosHost, WebViewConfigurator, WebViewPlan};
-use nwipc_macos_spi::{MacosSpi, SpiProbe};
+use nwipc_macos_spi::{MacosSpi, MacosSupport, SpiProbe};
 use nwipc_types::{Generation, SessionId};
 use serde::Serialize;
 use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
@@ -52,7 +52,8 @@ impl TauriAdapter {
     ///
     /// # Errors
     ///
-    /// Fails closed for unsupported `WebKit`, an invalid bundle, or invalid initialization data.
+    /// Fails for non-executable `WebKit`, an invalid bundle, or invalid initialization data.
+    /// Runnable systems without exact E2E evidence continue in best-effort mode.
     pub fn configure(
         probe: &impl SpiProbe,
         bundle: impl AsRef<Path>,
@@ -100,6 +101,17 @@ impl TauriAdapter {
         configurator: &mut impl WebViewConfigurator,
     ) -> Result<(), ErrorReport> {
         self.lock()?.host.plan().apply(configurator)
+    }
+
+    /// Reports whether this exact system is verified or running best effort.
+    pub fn support(&self) -> MacosSupport {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .host
+            .plan()
+            .spi()
+            .support()
     }
 
     /// Maps a Tauri window label to one active session generation.
@@ -420,7 +432,7 @@ mod tests {
     use std::fs;
 
     use nwipc_macos_artifact::{BUNDLE_EXECUTABLE, MANIFEST_FILE, current_manifest};
-    use nwipc_macos_spi::{OsVersion, SpiEntry};
+    use nwipc_macos_spi::{MacosArchitecture, OsVersion, SpiEntry};
 
     use super::*;
 
@@ -428,11 +440,15 @@ mod tests {
 
     impl SpiProbe for SupportedProbe {
         fn os_version(&self) -> Option<OsVersion> {
-            Some(OsVersion {
-                major: 26,
-                minor: 2,
-                patch: 0,
-            })
+            Some(OsVersion::new(26, 2, 0))
+        }
+
+        fn os_build(&self) -> Option<String> {
+            Some("25C56".to_owned())
+        }
+
+        fn architecture(&self) -> MacosArchitecture {
+            MacosArchitecture::Arm64
         }
 
         fn has_entry(&self, _: SpiEntry) -> bool {
@@ -445,6 +461,14 @@ mod tests {
     impl SpiProbe for UnsupportedProbe {
         fn os_version(&self) -> Option<OsVersion> {
             None
+        }
+
+        fn os_build(&self) -> Option<String> {
+            None
+        }
+
+        fn architecture(&self) -> MacosArchitecture {
+            MacosArchitecture::Arm64
         }
 
         fn has_entry(&self, _: SpiEntry) -> bool {
@@ -464,6 +488,7 @@ mod tests {
     fn maps_labels_replaces_generations_and_cleans_up() {
         let bundle = fixture_bundle();
         let adapter = TauriAdapter::configure(&SupportedProbe, &bundle, b"plist").unwrap();
+        assert_eq!(adapter.support(), MacosSupport::Verified);
         let session = SessionId::from_u128(1).unwrap();
         let generation = Generation::new(3).unwrap();
         adapter

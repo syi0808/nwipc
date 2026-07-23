@@ -431,6 +431,15 @@ fn bundle_assemble(binary: Option<String>) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn webkit_e2e() -> Result<(), String> {
+    let spi = nwipc_macos_spi::MacosSpi::initialize().map_err(|error| error.to_string())?;
+    println!(
+        "webkit-e2e: macos-support={:?} version={}.{}.{} architecture={:?}",
+        spi.support(),
+        spi.version().major,
+        spi.version().minor,
+        spi.version().patch,
+        spi.architecture()
+    );
     let root = workspace_root()?;
     let target = root.join("target");
     let work = target.join("webkit-e2e");

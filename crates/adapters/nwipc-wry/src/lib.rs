@@ -8,7 +8,7 @@ use nwipc_capabilities::TransportTopology;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_artifact::MacosArtifact;
 use nwipc_macos_host::{MacosHost, WebViewConfigurator, WebViewPlan};
-use nwipc_macos_spi::{MacosSpi, SpiProbe};
+use nwipc_macos_spi::{MacosSpi, MacosSupport, SpiProbe};
 use nwipc_types::{Generation, SessionId};
 #[cfg(target_os = "macos")]
 use wry::WebViewBuilderExtDarwin;
@@ -63,7 +63,8 @@ impl WryAdapter {
     ///
     /// # Errors
     ///
-    /// Fails closed for unsupported `WebKit`, an invalid bundle, or invalid initialization data.
+    /// Fails for non-executable `WebKit`, an invalid bundle, or invalid initialization data.
+    /// Runnable systems without exact E2E evidence continue in best-effort mode.
     pub fn configure(
         probe: &impl SpiProbe,
         bundle: impl AsRef<Path>,
@@ -94,6 +95,17 @@ impl WryAdapter {
         configurator: &mut impl WebViewConfigurator,
     ) -> Result<(), ErrorReport> {
         self.lock()?.host.plan().apply(configurator)
+    }
+
+    /// Reports whether this exact system is verified or running best effort.
+    pub fn support(&self) -> MacosSupport {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .host
+            .plan()
+            .spi()
+            .support()
     }
 
     /// Maps a Wry webview ID to one active session generation.
@@ -327,7 +339,7 @@ mod tests {
     use std::fs;
 
     use nwipc_macos_artifact::{BUNDLE_EXECUTABLE, MANIFEST_FILE, current_manifest};
-    use nwipc_macos_spi::{OsVersion, SpiEntry};
+    use nwipc_macos_spi::{MacosArchitecture, OsVersion, SpiEntry};
 
     use super::*;
 
@@ -335,11 +347,15 @@ mod tests {
 
     impl SpiProbe for SupportedProbe {
         fn os_version(&self) -> Option<OsVersion> {
-            Some(OsVersion {
-                major: 26,
-                minor: 2,
-                patch: 0,
-            })
+            Some(OsVersion::new(26, 2, 0))
+        }
+
+        fn os_build(&self) -> Option<String> {
+            Some("25C56".to_owned())
+        }
+
+        fn architecture(&self) -> MacosArchitecture {
+            MacosArchitecture::Arm64
         }
 
         fn has_entry(&self, _: SpiEntry) -> bool {
@@ -371,6 +387,7 @@ mod tests {
     fn builder_configuration_and_lifecycle_preserve_identity() {
         let bundle = fixture_bundle();
         let adapter = WryAdapter::configure(&SupportedProbe, &bundle, b"plist").unwrap();
+        assert_eq!(adapter.support(), MacosSupport::Verified);
         let mut configuration = Configuration::default();
         adapter.configure_webview(&mut configuration).unwrap();
         assert_eq!(configuration.0, ["bundle", "bootstrap", "commit"]);

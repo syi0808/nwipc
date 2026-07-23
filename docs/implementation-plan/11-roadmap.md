@@ -403,7 +403,7 @@ Vertical slice의 21개 기준별 test/job/support 연결은
 | Notification | session+generation+direction 기반 이름 |
 | JSC receive | 첫 slice JS-owned copy |
 | Reconnect | runtime mechanism, application policy |
-| WebKit | OS/build allowlist + runtime probe |
+| WebKit | exact-build verification evidence + runtime viability probe |
 
 Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface와 WebKit SPI는 실행 실험으로 가능성을 확인한 뒤 production API를 고정한다.
 

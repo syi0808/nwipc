@@ -63,5 +63,5 @@ does not pass.
 
 Portable layout/protocol behavior is released for Linux/macOS x86_64 and arm64. IOSurface and
 Darwin/hybrid provider contracts are gated on macOS 15 arm64 and Intel runners. Production WebKit
-support remains the explicit allowlisted macOS 26.2 arm64 build until another signed process
+verified support remains the exact macOS 26.2 (25C56) arm64 build until another signed process
 matrix is recorded; provider coverage alone does not expand the WebKit support claim.

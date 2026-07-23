@@ -11,6 +11,7 @@ nwipc.workspace = true
 nwipc-channel-core.workspace = true
 nwipc-error.workspace = true
 nwipc-macos-artifact.workspace = true
+nwipc-macos-spi.workspace = true
 nwipc-webkit-testkit.workspace = true
 
 [lints]

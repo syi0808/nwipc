@@ -10,15 +10,25 @@
 | Mach memory + port signal provider | macOS arm64/x86_64 | 실험적 | capability transfer, native protection, two-process raw-byte/notification contract |
 | JSC binding | macOS arm64 | 실험적 | callback/teardown contract; signed E2E에서 load |
 | Runtime-neutral async / Tokio peer adapter | Linux/macOS, x86_64/arm64 | 실험적 | fake readiness contract, bounded polling recovery, workspace CI |
-| Wry 0.55 / Tauri 2.11 adapter | macOS 26.2 arm64 | 실험적 | builder configuration merge, framework lifecycle/cleanup, stale generation, workspace CI |
-| WKWebView injected bundle | macOS 26.2 arm64 | 제한적 지원 | SPI allowlist/probe와 trusted signed hardened E2E |
-| macOS 26.2 x86_64 | provider만 검증 | WebKit 지원 안 함 | trusted signed process matrix가 필요함 |
-| 그 외 macOS release | allowlist 밖 | 지원 안 함 | `Unsupported`로 fail closed |
+| Wry 0.55 / Tauri 2.11 adapter | macOS arm64/x86_64 | 실험적 | builder configuration merge, framework lifecycle/cleanup, stale generation, workspace CI |
+| WKWebView injected bundle | macOS 26.2 (25C56) arm64 | 검증됨 | trusted signed hardened E2E 전체 matrix 통과 |
+| 미검증 macOS/build | x86_64 10.12+, arm64 11.0+ | `BestEffort` | 필수 SPI runtime probe 통과 시 실행; 동작과 오류를 보장하지 않음 |
+| 실행 불가능한 macOS | x86_64 10.12 미만, arm64 11.0 미만, 기타 architecture, 필수 SPI 누락 | `Incompatible` | loader 하한 미달은 실행 불가; runtime probe 실패는 typed `Unsupported` |
 | Windows, iOS, Android | 전체 | 지원 안 함 | provider 없음 |
 
 Rust MSRV는 `1.85.0`, TypeScript client의 Node.js 최소 버전은 20이다. Wire layout은 explicit
 little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 실제 WebKit 지원은 위에
 명시한 OS/architecture 조합만 의미한다.
+
+판정은 **실행 가능성**과 **검증 증거**를 분리한다. Apple은 [`WKWebView`를 macOS 10.10부터
+제공](https://developer.apple.com/documentation/webkit/wkwebview)하지만, Rust Apple target의
+하한이 [x86_64 macOS 10.12, arm64 macOS
+11.0](https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html)이므로 NWIPC의 논리적
+하한은 후자다. 이 하한 이상에서는 `_WKProcessPoolConfiguration`과 필수 selector를 runtime에
+조회하고 모두 존재하면 실행한다. 정확히 검증된 product version/build/architecture만
+`Verified`, 나머지는 `BestEffort`다. 버전이 더 새롭거나 major가 달라도 그 사실만으로 차단하지
+않는다. `BestEffort`의 실패는 NWIPC가 재현이나 호환성을 보장하지 않지만, 입력 검증·메모리
+안전성·인증 실패 같은 보안 경계는 동일하게 fail closed 한다.
 
 ## Failure matrix
 
@@ -54,7 +64,7 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 cargo xtask hardening-check
 cargo test --workspace
 cargo run --release -p xtask -- benchmark
-cargo xtask webkit-e2e                 # allowlisted macOS only
+cargo xtask webkit-e2e                 # runtime-compatible macOS
 cargo test --release -p nwipc-macos-transport --test actual_provider_benchmark -- --ignored --nocapture
 ```
 

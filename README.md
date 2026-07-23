@@ -6,9 +6,10 @@ NWIPC is an experimental, host-relay-free shared-memory IPC transport for a macO
 The repository includes its protocol wire foundation, in-process SPSC data plane, native
 two-process bootstrap, macOS memory/signal providers, renderer runtime, and the macOS WebKit
 control plane. The data plane supports bounded, atomically published fragmentation with
-single-message reassembly. The WebKit slice provides a fail-closed SPI probe, injected-bundle lifecycle and
+single-message reassembly. The WebKit slice provides a runtime viability and verification probe, injected-bundle lifecycle and
 panic boundaries, strict renderer bootstrap attachment, generation replacement, and deterministic
-bundle assembly/inspection. Unsupported OS/build combinations are reported explicitly.
+bundle assembly/inspection. Untested but viable OS/build combinations run best effort, while
+logically incompatible configurations are reported explicitly.
 
 The `nwipc` facade now owns production configuration, generation-scoped session resources,
 peer bootstrap, renderer transport creation, close, and redacted diagnostics. Its macOS path attaches
@@ -38,7 +39,7 @@ Phase 7 threat/unsafe audit, fuzz/sanitizer scope, benchmark procedure, and supp
 combinations are documented in [`docs/security.md`](docs/security.md) and
 [`docs/support-matrix.md`](docs/support-matrix.md).
 
-On an allowlisted macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke,
+On a runtime-compatible macOS release, run the real ad-hoc signed hardened `WKWebView` process smoke,
 including direct renderer↔native-peer `IOSurface` binary echo:
 
 ```sh

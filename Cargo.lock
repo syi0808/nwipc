@@ -4488,6 +4488,7 @@ dependencies = [
  "nwipc-channel-core",
  "nwipc-error",
  "nwipc-macos-artifact",
+ "nwipc-macos-spi",
  "nwipc-webkit-testkit",
 ]
 

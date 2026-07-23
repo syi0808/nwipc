@@ -2,7 +2,7 @@
 
 Portable contract tests live beside the relevant crates and cover:
 
-- strict SPI allowlisting and missing-selector failure;
+- exact-build verification classification, best-effort execution, and missing-selector failure;
 - property-list bootstrap field validation and ordered provider attachment;
 - main-frame/normal-world binding eligibility;
 - document invalidation and page teardown;
