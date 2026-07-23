@@ -222,6 +222,7 @@ impl WryAdapter {
             .map_err(|_| adapter_error(ErrorCode::Internal, "Wry adapter state"))
     }
 
+    #[cfg(target_os = "macos")]
     fn record_callback_failure(&self, error: ErrorReport) {
         self.state
             .lock()
@@ -229,6 +230,7 @@ impl WryAdapter {
             .callback_failure = Some(error);
     }
 
+    #[cfg(target_os = "macos")]
     fn renderer_terminated_current(&self, webview: &WebViewId) -> Result<Generation, ErrorReport> {
         let mut state = self.lock()?;
         let identity = state.current_identity(webview)?;
