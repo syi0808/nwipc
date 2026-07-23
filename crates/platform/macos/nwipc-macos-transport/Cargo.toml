@@ -18,6 +18,7 @@ nwipc-bootstrap-schema.workspace = true
 nwipc-capabilities.workspace = true
 nwipc-channel-core.workspace = true
 nwipc-channel-transport.workspace = true
+nwipc-crypto.workspace = true
 nwipc-error.workspace = true
 nwipc-layout.workspace = true
 nwipc-memory-api.workspace = true

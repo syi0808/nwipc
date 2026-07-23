@@ -73,6 +73,10 @@ pub enum ErrorCode {
     Backpressured = 17,
     /// Shared state contains an impossible cursor distance.
     InvalidCursor = 18,
+    /// Authenticated data failed cryptographic verification.
+    AuthenticationFailed = 19,
+    /// An authenticated sequence was replayed or reordered.
+    ReplayDetected = 20,
 }
 
 /// Whether retrying or replacing the endpoint can recover an operation.
@@ -278,6 +282,7 @@ const _: () = {
     assert!(ErrorCode::UnknownRequiredFlag as u16 != ErrorCode::MessageTooLarge as u16);
     assert!(ErrorCode::MessageTooLarge as u16 != ErrorCode::Backpressured as u16);
     assert!(ErrorCode::Backpressured as u16 != ErrorCode::InvalidCursor as u16);
+    assert!(ErrorCode::AuthenticationFailed as u16 != ErrorCode::ReplayDetected as u16);
 };
 
 #[cfg(test)]

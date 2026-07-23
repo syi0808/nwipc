@@ -222,9 +222,25 @@ where
     ///
     /// Propagates channel and signal-provider failures.
     pub fn send(&mut self, payload: &[u8]) -> Result<ChannelSend, ErrorReport> {
+        self.send_with_publication(payload)?.finish()
+    }
+
+    /// Publishes a complete message and preserves the publication result if notification fails.
+    ///
+    /// This split result lets authenticated transports commit a nonce/counter exactly when the
+    /// shared cursor is published. An `Err` from this method means no message was published;
+    /// [`PublishedSend::finish`] reports a later notification failure.
+    ///
+    /// # Errors
+    ///
+    /// Propagates channel failures which occur before publication.
+    pub fn send_with_publication(&mut self, payload: &[u8]) -> Result<PublishedSend, ErrorReport> {
         let sent = self.channel.send(payload)?;
-        self.notify_outbound(sent)?;
-        Ok(sent)
+        let notification_error = self.notify_outbound(sent).err();
+        Ok(PublishedSend {
+            sent,
+            notification_error,
+        })
     }
 
     /// Writes an inline record without cursor publication for a process-crash harness.
@@ -355,6 +371,29 @@ where
             self.coalesced_wakeups = self.coalesced_wakeups.saturating_add(1);
         }
         Ok(())
+    }
+}
+
+/// A message whose shared cursor was published, with its fallible notification result retained.
+#[must_use]
+pub struct PublishedSend {
+    sent: ChannelSend,
+    notification_error: Option<ErrorReport>,
+}
+
+impl PublishedSend {
+    /// Returns the committed channel outcome independent of notification delivery.
+    pub const fn outcome(&self) -> ChannelSend {
+        self.sent
+    }
+
+    /// Returns the outcome or the notification-provider failure observed after publication.
+    ///
+    /// # Errors
+    ///
+    /// Returns a signal-provider error without changing the already published message.
+    pub fn finish(self) -> Result<ChannelSend, ErrorReport> {
+        self.notification_error.map_or(Ok(self.sent), Err)
     }
 }
 
@@ -577,6 +616,46 @@ mod tests {
         renderer.send(b"first").unwrap();
         renderer.send(b"second").unwrap();
         assert_eq!(renderer.diagnostics().coalesced_wakeups, 1);
+    }
+
+    #[test]
+    fn publication_is_observable_before_notification_failure() {
+        #[derive(Clone, Copy)]
+        struct FailingSender;
+
+        impl SignalSender for FailingSender {
+            fn notify(&self) -> Result<(), ErrorReport> {
+                Err(ErrorReport::new(
+                    ErrorCategory::Signal,
+                    ErrorCode::Internal,
+                    Recoverability::ReplaceEndpoint,
+                    "test notification failure",
+                ))
+            }
+        }
+
+        let (renderer, mut peer) = mapped_endpoints(&FakeMemoryProvider).unwrap();
+        let (_, outbound_listener) = fake_signal_pair(FakeSignalMode::Deliver);
+        let (_, inbound_listener) = fake_signal_pair(FakeSignalMode::Deliver);
+        let mut transport = ChannelTransport::new(
+            renderer,
+            FailingSender,
+            outbound_listener,
+            FailingSender,
+            inbound_listener,
+            PollConfig::default(),
+        )
+        .unwrap();
+        let published = transport.send_with_publication(b"committed").unwrap();
+        assert!(published.outcome().notify);
+        assert_eq!(
+            published.finish().unwrap_err().category(),
+            ErrorCategory::Signal
+        );
+        assert_eq!(
+            peer.receive().unwrap(),
+            Some(ChannelEvent::Message(b"committed".to_vec()))
+        );
     }
 
     #[test]

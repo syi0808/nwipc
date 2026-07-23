@@ -20,8 +20,10 @@ impl TransportCapabilities {
     pub const DIRECT_SIGNAL: Self = Self(1 << 3);
     /// Signal hints may be relayed by the host.
     pub const HOST_RELAYED_SIGNAL: Self = Self(1 << 4);
-    /// Region encryption is available.
-    pub const ENCRYPTED_REGION: Self = Self(1 << 5);
+    /// Generation-bound authenticated payload encryption is available.
+    pub const AUTHENTICATED_ENCRYPTION: Self = Self(1 << 5);
+    /// Compatibility name for authenticated payload encryption.
+    pub const ENCRYPTED_REGION: Self = Self::AUTHENTICATED_ENCRYPTION;
     /// Borrowed send buffers are available.
     pub const BORROWED_SEND: Self = Self(1 << 6);
     /// Borrowed receive buffers are available.

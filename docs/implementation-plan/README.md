@@ -51,14 +51,16 @@ Phase 7 hardening: [security/unsafe audit](../security.md),
 
 후순위:
 
-- chunk pool, crypto, Mach provider
-- Bun, Wry/Tauri
+- chunk pool, Mach provider
+- Bun
 - borrowed send/receive, Windows/Linux backend
 
-Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter를 완료했다. Fragmentation은
+Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter와 authentication/encryption을
+완료했다. Fragmentation은
 production handshake capability 협상 결과에 따라 실제 WebKit transport에서도 활성화된다.
 Wry/Tauri는 AppKit reference host plan을 WebView 생성 전 native configuration에 병합하고
 framework identity/lifecycle만 routing하며 application payload를 framework IPC로 relay하지 않는다.
+macOS production frame과 HELLO/ACK는 generation secret에서 파생한 방향별 AEAD key로 보호한다.
 
 ## 초기 설계 subset 보완
 

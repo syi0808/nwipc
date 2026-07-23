@@ -41,6 +41,7 @@ nwipc-ring-reader = { version = "=0.0.0", path = "crates/data-plane/nwipc-ring-r
 nwipc-flow-control = { version = "=0.0.0", path = "crates/data-plane/nwipc-flow-control" }
 nwipc-channel-core = { version = "=0.0.0", path = "crates/data-plane/nwipc-channel-core" }
 nwipc-channel-transport = { version = "=0.0.0", path = "crates/data-plane/nwipc-channel-transport" }
+nwipc-crypto = { version = "=0.0.0", path = "crates/data-plane/nwipc-crypto" }
 nwipc-fragment = { version = "=0.0.0", path = "crates/data-plane/nwipc-fragment" }
 nwipc-bootstrap-schema = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bootstrap-schema" }
 nwipc-bootstrap-codec = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bootstrap-codec" }
@@ -78,6 +79,10 @@ nwipc-wry = { version = "=0.0.0", path = "crates/adapters/nwipc-wry" }
 nwipc-tauri = { version = "=0.0.0", path = "crates/adapters/nwipc-tauri" }
 nwipc = { version = "=0.0.0", path = "crates/facade/nwipc" }
 tokio = { version = "1", default-features = false }
+chacha20poly1305 = { version = "0.10", default-features = false }
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

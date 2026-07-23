@@ -17,7 +17,7 @@ Vertical slice milestone은 같은 candidate의 clean `CI`/`Hardening`, 양쪽 a
 | Gate | Required scope | Workflow/job |
 |---|---|---|
 | Stable workspace | format, clippy, Rust/TypeScript tests, dependency policy, JSC lifecycle repetition | `CI` |
-| Memory safety | Miri, AddressSanitizer, record/bootstrap/layout/fragment/protocol/validation fuzz smoke | `Hardening` |
+| Memory safety | Miri, AddressSanitizer, record/bootstrap/layout/fragment/protocol/validation/crypto fuzz smoke | `Hardening` |
 | Cross architecture | identical fixed-width fixtures and diagnostics contracts on macOS arm64 and x86_64 | `CI / cross-architecture-fixtures`, `Release Gate / cross-architecture` |
 | Actual providers | IOSurface, Darwin/hybrid channel contracts and baseline benchmark on both macOS architectures | `Release Gate / cross-architecture` |
 | Production process | trusted-identity signed/hardened WebKit notification, crash, kill, reload, and generation matrix | `Release Gate / signed-webkit-e2e` |

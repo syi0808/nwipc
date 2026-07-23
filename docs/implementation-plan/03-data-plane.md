@@ -118,8 +118,9 @@
 
 ## 후순위
 
-Chunk pool, authentication/encryption, borrowed receive는 후속 Phase 8 범위다. Production
-handshake에서 fragmentation capability를 연결하기 전에는 해당 transport의 inline maximum을 유지한다.
+Authentication/encryption은 Phase 8에서 complete transport frame 보호로 production macOS 경로에
+연결했다. Ring metadata는 validation 대상으로 남고 application payload와 HELLO/ACK는
+generation-bound AEAD로 보호한다. Chunk pool과 borrowed receive는 후속 Phase 8 범위다.
 
 ## 완료 기준
 

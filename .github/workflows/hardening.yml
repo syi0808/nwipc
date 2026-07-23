@@ -49,3 +49,4 @@ jobs:
       - run: cargo +nightly fuzz run fragment -- -max_total_time=30
       - run: cargo +nightly fuzz run protocol -- -max_total_time=30
       - run: cargo +nightly fuzz run validation -- -max_total_time=30
+      - run: cargo +nightly fuzz run crypto -- -max_total_time=30

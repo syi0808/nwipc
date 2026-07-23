@@ -104,6 +104,7 @@ fn hardening_check() -> Result<(), String> {
         "fuzz/fuzz_targets/bootstrap.rs",
         "fuzz/fuzz_targets/layout.rs",
         "fuzz/fuzz_targets/fragment.rs",
+        "fuzz/fuzz_targets/crypto.rs",
     ] {
         if !root.join(required).is_file() {
             return Err(format!("missing hardening artifact: {required}"));

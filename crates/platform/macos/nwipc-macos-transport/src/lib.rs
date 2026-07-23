@@ -9,6 +9,7 @@ use nwipc_channel_core::ChannelSend;
 use nwipc_channel_transport::{
     ChannelTransport, TransportEvent as ChannelEvent, attach_mapped_endpoint, initialize_region,
 };
+use nwipc_crypto::{EndpointProtection, EndpointRole as CryptoEndpointRole, FRAME_OVERHEAD};
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_layout::{OwnerRole, REGION_HEADER_SIZE, RegionLayout};
 use nwipc_memory_api::{MappingAccess, SharedMemoryProvider};
@@ -242,6 +243,7 @@ type MacosChannel = ChannelTransport<E2eDarwinSender, DarwinListener>;
 /// Raw complete-frame transport attached from a validated bootstrap envelope.
 pub struct MacosEndpointTransport {
     channel: MacosChannel,
+    protection: EndpointProtection,
     high_watermark: u32,
     pending_inbound: VecDeque<Vec<u8>>,
     remote_closed: bool,
@@ -323,8 +325,19 @@ impl MacosEndpointTransport {
             signal.listener(inbound_signal, generation)?,
             PollConfig::default(),
         )?;
+        let crypto_role = match role {
+            EndpointRole::Renderer => CryptoEndpointRole::Renderer,
+            EndpointRole::Peer => CryptoEndpointRole::Peer,
+        };
+        let protection = EndpointProtection::derive(
+            envelope.secret().expose(),
+            envelope.session_id(),
+            generation,
+            crypto_role,
+        )?;
         Ok(Self {
             channel,
+            protection,
             high_watermark: configuration.high_watermark,
             pending_inbound: VecDeque::new(),
             remote_closed: false,
@@ -332,7 +345,38 @@ impl MacosEndpointTransport {
     }
 
     fn send_frame(&mut self, frame: &[u8]) -> Result<ChannelSend, ErrorReport> {
-        self.channel.send(frame)
+        let pending = self.protection.prepare(frame)?;
+        let published = self.channel.send_with_publication(pending.bytes())?;
+        pending.commit();
+        published.finish()
+    }
+
+    #[cfg(feature = "fault-injection")]
+    fn prepare_uncommitted_for_crash(&mut self, frame: &[u8]) -> Result<(), ErrorReport> {
+        let pending = self.protection.prepare(frame)?;
+        self.channel.prepare_uncommitted_for_crash(pending.bytes())
+    }
+
+    #[cfg(feature = "fault-injection")]
+    fn send_without_notification(&mut self, frame: &[u8]) -> Result<ChannelSend, ErrorReport> {
+        let pending = self.protection.prepare(frame)?;
+        let sent = self.channel.send_without_notification(pending.bytes())?;
+        pending.commit();
+        Ok(sent)
+    }
+
+    fn open_message(&mut self, protected: &[u8]) -> Result<Vec<u8>, ErrorReport> {
+        self.protection.open(protected)
+    }
+
+    fn poll_channel(&mut self) -> Result<Option<ChannelEvent>, ErrorReport> {
+        match self.channel.poll()? {
+            Some(ChannelEvent::Message(protected)) => self
+                .open_message(&protected)
+                .map(ChannelEvent::Message)
+                .map(Some),
+            event => Ok(event),
+        }
     }
 
     fn receive_frame(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
@@ -344,7 +388,9 @@ impl MacosEndpointTransport {
         }
         loop {
             match self.channel.wait_timeout(Duration::from_millis(64))? {
-                Some(ChannelEvent::Message(frame)) => return Ok(Some(frame)),
+                Some(ChannelEvent::Message(protected)) => {
+                    return self.open_message(&protected).map(Some);
+                }
                 Some(ChannelEvent::Closed | ChannelEvent::Reset) => return Ok(None),
                 Some(ChannelEvent::Writable | ChannelEvent::Control(_)) | None => {}
             }
@@ -357,7 +403,7 @@ impl PortTransport for MacosEndpointTransport {
         match self.send_frame(frame) {
             Ok(_) => Ok(()),
             Err(error) if error.code() == ErrorCode::Backpressured => {
-                match self.channel.poll()? {
+                match self.poll_channel()? {
                     Some(ChannelEvent::Message(frame)) => self.pending_inbound.push_back(frame),
                     Some(ChannelEvent::Closed | ChannelEvent::Reset) => self.remote_closed = true,
                     Some(ChannelEvent::Writable | ChannelEvent::Control(_)) | None => {}
@@ -375,7 +421,7 @@ impl PortTransport for MacosEndpointTransport {
         if self.remote_closed {
             return Ok(None);
         }
-        match self.channel.poll()? {
+        match self.poll_channel()? {
             Some(ChannelEvent::Message(frame)) => Ok(Some(frame)),
             Some(ChannelEvent::Closed | ChannelEvent::Reset) => {
                 self.remote_closed = true;
@@ -597,11 +643,11 @@ impl RendererTransport for MacosRendererTransport {
         #[cfg(feature = "fault-injection")]
         match std::mem::replace(&mut self.crash_point, WriterCrashPoint::None) {
             WriterCrashPoint::BeforeCommit => {
-                self.raw.channel.prepare_uncommitted_for_crash(&frame)?;
+                self.raw.prepare_uncommitted_for_crash(&frame)?;
                 std::process::abort();
             }
             WriterCrashPoint::AfterCommit => {
-                self.raw.channel.send_without_notification(&frame)?;
+                self.raw.send_without_notification(&frame)?;
                 std::process::abort();
             }
             WriterCrashPoint::None => {}
@@ -620,7 +666,7 @@ impl RendererTransport for MacosRendererTransport {
     }
 
     fn poll(&mut self) -> Result<Option<RendererEvent>, ErrorReport> {
-        match self.raw.channel.poll()? {
+        match self.raw.poll_channel()? {
             Some(ChannelEvent::Message(frame)) => match frame.split_first() {
                 Some((&0, payload)) if payload.len() <= self.maximum_message => {
                     Ok(Some(RendererEvent::Message(payload.to_vec())))
@@ -674,12 +720,15 @@ fn expectation(envelope: &BootstrapEnvelope, owner: OwnerRole) -> RegionExpectat
 }
 
 fn negotiated(configuration: ChannelConfiguration) -> Result<NegotiatedProtocol, ErrorReport> {
+    let frame_overhead = u32::try_from(FRAME_OVERHEAD)
+        .map_err(|_| platform_error(ErrorCode::InvalidRange, "frame protection overhead"))?;
     Ok(NegotiatedProtocol {
         version: ProtocolVersion::new(1, 0),
         capabilities: NegotiatedCapabilities::new(production_capabilities()),
         maximum_message: configuration
             .maximum_message
             .checked_add(1)
+            .and_then(|maximum| maximum.checked_add(frame_overhead))
             .ok_or_else(|| platform_error(ErrorCode::InvalidRange, "macOS framed message limit"))?,
     })
 }
@@ -690,6 +739,7 @@ pub const fn production_capabilities() -> TransportCapabilities {
         .union(TransportCapabilities::BINARY_MESSAGES)
         .union(TransportCapabilities::BOUNDED_BACKPRESSURE)
         .union(TransportCapabilities::DIRECT_SIGNAL)
+        .union(TransportCapabilities::AUTHENTICATED_ENCRYPTION)
         .union(TransportCapabilities::FRAGMENTATION)
 }
 
@@ -842,5 +892,12 @@ mod tests {
     fn malformed_descriptor_bundles_fail_closed() {
         assert!(decode_memory(b"NWM1").is_err());
         assert!(decode_signals(b"NWS1").is_err());
+    }
+
+    #[test]
+    fn production_requires_authenticated_encryption() {
+        assert!(
+            production_capabilities().contains(TransportCapabilities::AUTHENTICATED_ENCRYPTION)
+        );
     }
 }

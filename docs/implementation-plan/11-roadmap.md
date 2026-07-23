@@ -97,7 +97,7 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 2. [x] Async/Tokio
 3. [x] Wry
 4. [x] Tauri
-5. [ ] Authentication/encryption
+5. [x] Authentication/encryption
 6. [ ] Mach provider
 7. [ ] Chunk pool/borrowed API
 8. [ ] Bun/타 플랫폼
@@ -123,6 +123,17 @@ Tauri는 `nwipc-tauri`의 plugin/builder extension, window label/session mapping
 `ContinueWithoutNwipc`를 선택하며 adapter가 fallback transport나 global runtime을 만들지 않는다.
 두 adapter 모두 public `nwipc::Session` 등록 경로, fake native configurator의 적용 순서,
 replacement/cleanup/stale-event contract와 workspace architecture/clippy/test gate를 완료 증거로 사용한다.
+
+Authentication/encryption은 `nwipc-crypto`가 bootstrap의 32-byte generation secret에서
+HKDF-SHA-256으로 renderer→peer/peer→renderer 방향별 XChaCha20-Poly1305 key와 nonce prefix를
+파생한다. Complete transport frame은 64-bit counter와 session/generation AAD로 보호하며 HELLO/ACK도
+같은 경로를 사용한다. Counter는 shared cursor publication 뒤에만 commit하고 receiver는 정확한 FIFO
+counter만 수락해 backpressure/crash-before-commit, replay/reorder와 nonce 재사용을 분리한다.
+
+macOS production capability에는 `AUTHENTICATED_ENCRYPTION`을 필수로 포함해 downgrade를 거부한다.
+Payload/tag/counter tamper, wrong secret/generation, replay, unpublished pending frame과 양방향
+actual-provider round trip, key/error redaction 및 workspace gate를 완료 증거로 사용한다. 장기 peer
+identity, certificate와 forward secrecy는 application provisioning 범위이며 제공하지 않는다.
 
 ## 최초 백로그 상태
 

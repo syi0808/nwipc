@@ -17,15 +17,18 @@ native handle이다. Host는 descriptor와 lifecycle만 전달하며 payload dat
 | 잘못된 cursor/length로 OOB 접근 | checked arithmetic, capacity/alignment 검사, committed range 이후 decode | OS mapping adapter의 FFI 정확성에 의존 |
 | 부분 record 또는 producer crash | payload/header 작성 후 release cursor commit, 미commit bytes 비노출 | 손상된 producer가 의도적으로 cursor를 위조하면 generation 교체 필요 |
 | 이전 document의 stale delivery | session/generation 검증과 renderer document invalidation | 애플리케이션 수준 재전송 정책은 없음 |
-| bootstrap 가로채기/재사용 | inherited one-shot pipe, 16 KiB 상한, secret HELLO/ACK, bounded timeout | secret은 암호학적 channel authentication이 아님 |
+| bootstrap 가로채기/재사용 | inherited one-shot pipe, 16 KiB 상한, 32-byte generation secret, encrypted HELLO/ACK, bounded timeout | bootstrap secret 탈취 시 해당 generation impersonation 가능 |
 | signal 유실/중복/지연 | signal은 hint로만 사용, cursor polling으로 progress 회복 | polling interval만큼 latency 증가 |
-| IOSurface ID 노출 | descriptor 크기/generation/mapping 범위 검사 | 같은 trust domain 밖 process에 대한 confidentiality/authentication 없음 |
+| IOSurface ID 노출 | descriptor 크기/generation/mapping 범위 검사, HKDF 방향키, XChaCha20-Poly1305 frame protection | metadata traffic analysis와 descriptor 보유자의 denial of service 가능 |
+| payload tamper/replay | session/generation/counter AAD, strict FIFO replay validation, AEAD fail closed | compromised endpoint는 자기 generation의 key를 보유 |
 | payload/secret log 유출 | typed/redacted error operation만 노출, E2E log에 payload 미기록 | 애플리케이션 callback logging은 범위 밖 |
 | private WebKit SPI 변경 | OS allowlist와 required selector runtime probe, fail closed | allowlisted release의 patch update도 실제 E2E 재검증 필요 |
 
-서로 신뢰하지 않는 process, 다른 사용자, 공격자가 descriptor 또는 inherited pipe에 접근할 수 있는
-배포에서는 현재 transport를 사용하지 않는다. 이 배포 모델을 지원하려면 Phase 8의 authenticated
-key agreement와 record integrity/confidentiality를 먼저 구현해야 한다.
+Descriptor만 노출된 process는 application payload를 읽거나 위조할 수 없다. 그러나 inherited
+bootstrap pipe 또는 endpoint process가 손상되면 해당 generation의 secret과 key도 노출된다. 서로
+신뢰하지 않는 endpoint identity, 다른 사용자 간 IPC, 장기 identity와 forward secrecy가 필요한 배포는
+지원하지 않는다. Key schedule과 protected frame 계약은
+[`authentication-encryption.md`](authentication-encryption.md)에 고정한다.
 
 ## Unsafe 감사 기준선
 
@@ -55,7 +58,7 @@ macOS E2E 산출물은 nested code부터 outer app 순서로 `--options runtime`
 ## 도구 범위
 
 - Stable CI: workspace test/clippy, architecture/unsafe baseline, process crash/replacement matrix
-- Fuzz: record/bootstrap/layout arbitrary bytes, fragment state transition과 committed regression corpus
+- Fuzz: record/bootstrap/layout/crypto arbitrary bytes, fragment state transition과 committed regression corpus
 - Miri: platform-independent atomic/ring/channel crates; macOS FFI와 child-process E2E 제외
 - AddressSanitizer: protocol/bootstrap/data-plane/testkit의 Linux test target; JSC/WebKit FFI 제외
 - Hardened E2E: allowlisted macOS arm64에서 실제 bundle, IOSurface echo, WebContent replacement

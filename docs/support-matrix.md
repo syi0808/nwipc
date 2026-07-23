@@ -6,7 +6,7 @@
 |---|---|---|---|
 | Domain, wire codec, fragmented in-process data plane, renderer core | Linux/macOS, x86_64/arm64 | 지원 | stable workspace CI, fixture, stress, fuzz |
 | Native process-test peer | Linux/macOS, x86_64/arm64 | 실험적 | child echo, partial bootstrap, timeout, kill/reap, replacement |
-| IOSurface + Darwin Notify provider | macOS arm64/x86_64 | 실험적 | provider contract, two-process tests, actual-provider release benchmark |
+| IOSurface + Darwin Notify provider | macOS arm64/x86_64 | 실험적 | authenticated encryption, provider contract, two-process tests, actual-provider release benchmark |
 | JSC binding | macOS arm64 | 실험적 | callback/teardown contract; signed E2E에서 load |
 | Runtime-neutral async / Tokio peer adapter | Linux/macOS, x86_64/arm64 | 실험적 | fake readiness contract, bounded polling recovery, workspace CI |
 | Wry 0.55 / Tauri 2.11 adapter | macOS 26.2 arm64 | 실험적 | builder configuration merge, framework lifecycle/cleanup, stale generation, workspace CI |
@@ -28,6 +28,7 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 | after commit에서 writer 종료 | concurrent/stress ring tests | commit된 complete record만 FIFO 전달 |
 | signal dropped / duplicated / coalesced / delayed | channel/signal contract tests와 signed `webkit-e2e` | cursor drain으로 progress, 중복 delivery 없음 |
 | malformed record length/kind/flags/cursor | record/ring tests and fuzz | panic/OOB 없이 typed protocol error |
+| ciphertext/tag/counter tamper, replay, wrong secret/generation | `nwipc-crypto` contract tests | typed `AuthenticationFailed`/`ReplayDetected`, endpoint replacement, receive counter 불변 |
 | stale generation/document | peer, renderer, WebKit contract tests | attach/delivery 거부와 generation 교체 |
 | peer/WebContent exit, commit 전후 writer exit, repeated close / replacement | native process tests와 signed `webkit-e2e` | partial bytes 비노출, committed bytes 전달, bounded cleanup, child reap, 새 generation만 사용 |
 | SPI/bundle/signing/IOSurface failure | provider tests and `webkit-e2e` | silent fallback 없이 fail closed |
@@ -36,7 +37,7 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 
 - Data-plane fragmentation은 production WebKit handshake와 signed boundary matrix에 연결됐다.
 - Record inline payload 상한은 1 MiB이고 논리 메시지 상한은 채널 생성 시 ring 범위 안에서 설정한다.
-- Encryption/authentication과 reconnect policy는 아직 없다.
+- Production frame authentication/encryption은 필수이며 certificate identity, forward secrecy와 reconnect policy는 아직 없다.
 - Production WebKit origin별 binding policy는 아직 없다.
 - Wry/Tauri adapter는 macOS production provider만 지원하며 framework IPC를 payload fallback으로 사용하지 않는다.
 - Developer ID notarization/stapling과 WebKit macOS minor-release/x86_64 matrix는 아직 없다.
