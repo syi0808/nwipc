@@ -4,10 +4,13 @@ use std::env;
 use std::io::{self, Read, Write};
 
 use nwipc_bootstrap_schema::ProviderKind;
+use nwipc_capabilities::TransportCapabilities;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_transport::{MacosEndpointTransport, production_capabilities};
 use nwipc_peer_bootstrap::consume;
-use nwipc_peer_core::{NativePort, PeerExpectation, PeerPort, PortEvent, PortState, PortTransport};
+use nwipc_peer_core::{
+    BorrowedPortEvent, NativePort, PeerExpectation, PeerPort, PortEvent, PortState, PortTransport,
+};
 use nwipc_types::{Generation, SessionId};
 
 /// Default maximum logical application message.
@@ -98,6 +101,15 @@ impl Peer {
         self.port.try_receive()
     }
 
+    /// Receives an event while borrowing message bytes until the next mutable peer operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed transport or protocol failure.
+    pub fn try_receive_borrowed(&mut self) -> Result<Option<BorrowedPortEvent<'_>>, ErrorReport> {
+        self.port.try_receive_borrowed()
+    }
+
     /// Gracefully and idempotently closes the peer.
     ///
     /// # Errors
@@ -110,6 +122,11 @@ impl Peer {
     /// Current peer port state.
     pub const fn state(&self) -> PortState {
         self.port.state()
+    }
+
+    /// Returns negotiated transport bits plus local borrowed-buffer API support.
+    pub const fn capabilities(&self) -> TransportCapabilities {
+        self.port.api_capabilities()
     }
 
     /// Runs a blocking binary echo loop until the parent closes.

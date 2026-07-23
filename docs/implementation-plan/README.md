@@ -59,8 +59,8 @@ Mach migration parity baseline:
 - Bun
 - borrowed send/receive, Windows/Linux backend
 
-Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter, authentication/encryption과
-Mach provider contract를
+Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter, authentication/encryption,
+Mach provider contract와 chunk pool/borrowed API를
 완료했다. Fragmentation은
 production handshake capability 협상 결과에 따라 실제 WebKit transport에서도 활성화된다.
 Wry/Tauri는 AppKit reference host plan을 WebView 생성 전 native configuration에 병합하고

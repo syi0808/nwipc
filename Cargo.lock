@@ -1791,6 +1791,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-chunk-pool"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+]
+
+[[package]]
 name = "nwipc-crypto"
 version = "0.0.0"
 dependencies = [
@@ -1999,6 +2006,7 @@ name = "nwipc-peer"
 version = "0.0.0"
 dependencies = [
  "nwipc-bootstrap-schema",
+ "nwipc-capabilities",
  "nwipc-error",
  "nwipc-macos-transport",
  "nwipc-peer-bootstrap",

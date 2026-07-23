@@ -99,7 +99,7 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 4. [x] Tauri
 5. [x] Authentication/encryption
 6. [x] Mach provider
-7. [ ] Chunk pool/borrowed API
+7. [x] Chunk pool/borrowed API
 8. [ ] Bun/타 플랫폼
 
 Phase 8 항목은 production vertical slice의 통합 경로가 닫힌 뒤 착수한다. 완료된 fragmentation은
@@ -142,6 +142,15 @@ receive right는 정확히 한 endpoint로만 move한다. Descriptor redaction/s
 동일 process lifecycle과 별도 process raw-byte/notification contract, unsafe audit 및 workspace gate를
 완료 증거로 사용한다. 기존 WebKit 기본값은 IOSurface/Darwin hybrid이며 Mach 선택은 experimental
 provider contract로 유지한다.
+
+Chunk pool은 `nwipc-chunk-pool`의 고정 크기 slab와 bounded free/ready/completion ownership으로
+구현한다. Producer loan은 초기화할 payload prefix만 노출하고 commit 전 drop은 free queue로 되돌리며,
+commit 뒤에는 consumer의 borrowed receipt가 release/drop될 때까지 같은 slab를 다시 loan하지 않는다.
+Peer의 `try_receive_borrowed`는 검증이 끝난 transport frame의 payload를 다음 mutable operation 전까지만
+빌려 주고 기존 owned event API는 호환 경로로 유지한다. Borrowed send/receive capability는 wire 요구사항이
+아닌 local API capability로 보고해 이전 endpoint와의 handshake를 깨지 않는다. Exhaustion backpressure,
+oversize/invalid configuration, uncommitted drop, FIFO slab reuse, concurrent SPSC와 workspace
+architecture/clippy/test gate를 완료 증거로 사용한다.
 
 제품 provider를 Mach-only로 단순화하는 작업은
 [`12-mach-only-migration.md`](12-mach-only-migration.md)의 순서를 따른다. Mach right의 production

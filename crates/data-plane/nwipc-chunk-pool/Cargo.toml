@@ -1,23 +1,17 @@
 [package]
-name = "nwipc-peer"
+name = "nwipc-chunk-pool"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [package.metadata.nwipc]
-layer = "peer"
+layer = "data-plane"
 stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
-nwipc-bootstrap-schema.workspace = true
-nwipc-capabilities.workspace = true
 nwipc-error.workspace = true
-nwipc-macos-transport.workspace = true
-nwipc-peer-bootstrap.workspace = true
-nwipc-peer-core.workspace = true
-nwipc-types.workspace = true
 
 [lints]
 workspace = true

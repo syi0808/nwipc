@@ -94,6 +94,15 @@ pub enum PortEvent {
     Closed,
 }
 
+/// One received event borrowed until the next mutable port operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BorrowedPortEvent<'port> {
+    /// Complete binary application message borrowed from the transport frame.
+    Message(&'port [u8]),
+    /// The remote endpoint closed gracefully.
+    Closed,
+}
+
 /// Synchronous, nonblocking peer operations consumed by runtime adapters.
 pub trait PeerPort {
     /// Attempts to send one complete message.
@@ -128,6 +137,7 @@ pub struct NativePort<T> {
     identity: PeerExpectation,
     maximum_message: usize,
     capabilities: TransportCapabilities,
+    received_frame: Vec<u8>,
 }
 
 impl<T: PortTransport> NativePort<T> {
@@ -197,6 +207,7 @@ impl<T: PortTransport> NativePort<T> {
                 )
             })?,
             capabilities: negotiated.capabilities.capabilities(),
+            received_frame: Vec::new(),
         })
     }
 
@@ -251,6 +262,7 @@ impl<T: PortTransport> NativePort<T> {
                 )
             })?,
             capabilities: negotiated.capabilities.capabilities(),
+            received_frame: Vec::new(),
         })
     }
 
@@ -284,6 +296,21 @@ impl<T: PortTransport> NativePort<T> {
     ///
     /// Returns a transport or protocol failure and invalidates the current port.
     pub fn try_receive(&mut self) -> Result<Option<PortEvent>, ErrorReport> {
+        Ok(self.try_receive_borrowed()?.map(|event| match event {
+            BorrowedPortEvent::Message(payload) => PortEvent::Message(payload.to_vec()),
+            BorrowedPortEvent::Closed => PortEvent::Closed,
+        }))
+    }
+
+    /// Receives one complete event while borrowing application bytes from the transport frame.
+    ///
+    /// The returned slice remains valid until the next mutable operation on this port. This avoids
+    /// the facade's owned-event copy while preserving the transport's validation boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport or protocol failure and invalidates the current port.
+    pub fn try_receive_borrowed(&mut self) -> Result<Option<BorrowedPortEvent<'_>>, ErrorReport> {
         self.ensure_open("peer receive")?;
         let Some(frame) = self.transport.receive().inspect_err(|_| {
             self.state = PortState::Failed;
@@ -301,12 +328,13 @@ impl<T: PortTransport> NativePort<T> {
         };
         match kind {
             DATA_KIND if payload.len() <= self.maximum_message => {
-                Ok(Some(PortEvent::Message(payload.to_vec())))
+                self.received_frame = frame;
+                Ok(Some(BorrowedPortEvent::Message(&self.received_frame[1..])))
             }
             1 if payload.is_empty() => {
                 self.state = PortState::Closed;
                 self.transport.close()?;
-                Ok(Some(PortEvent::Closed))
+                Ok(Some(BorrowedPortEvent::Closed))
             }
             _ => {
                 self.state = PortState::Failed;
@@ -349,6 +377,15 @@ impl<T: PortTransport> NativePort<T> {
     /// Capabilities negotiated for this endpoint.
     pub const fn capabilities(&self) -> TransportCapabilities {
         self.capabilities
+    }
+
+    /// Capabilities available through this local API after transport negotiation.
+    ///
+    /// Borrowed buffer ownership is local and does not add a wire requirement to the handshake.
+    pub const fn api_capabilities(&self) -> TransportCapabilities {
+        self.capabilities
+            .union(TransportCapabilities::BORROWED_SEND)
+            .union(TransportCapabilities::BORROWED_RECEIVE)
     }
 
     fn ensure_open(&self, operation: &'static str) -> Result<(), ErrorReport> {
@@ -568,6 +605,31 @@ mod tests {
         port.close().unwrap();
         port.close().unwrap();
         assert_eq!(port.state(), PortState::Closed);
+    }
+
+    #[test]
+    fn borrows_received_payload_from_the_transport_frame() {
+        let transport = FakeTransport {
+            received: VecDeque::from([acknowledgement(16), vec![0, 7, 8, 9]]),
+            sent: Vec::new(),
+            send_outcomes: VecDeque::new(),
+            closed: false,
+        };
+        let mut port = NativePort::attach(envelope(), expectation(), transport, 16).unwrap();
+
+        assert_eq!(
+            port.try_receive_borrowed().unwrap(),
+            Some(BorrowedPortEvent::Message(&[7, 8, 9]))
+        );
+        assert!(
+            port.api_capabilities()
+                .contains(TransportCapabilities::BORROWED_SEND)
+        );
+        assert!(
+            port.api_capabilities()
+                .contains(TransportCapabilities::BORROWED_RECEIVE)
+        );
+        assert_eq!(port.state(), PortState::Open);
     }
 
     #[test]
