@@ -14,6 +14,7 @@
 | WKWebView injected bundle | macOS 26.2 (25C56) arm64 | 검증됨 | trusted signed hardened E2E 전체 matrix 통과 |
 | 미검증 macOS/build | x86_64 10.12+, arm64 11.0+ | `BestEffort` | 필수 SPI runtime probe 통과 시 실행; 동작과 오류를 보장하지 않음 |
 | 실행 불가능한 macOS | x86_64 10.12 미만, arm64 11.0 미만, 기타 architecture, 필수 SPI 누락 | `Incompatible` | loader 하한 미달은 실행 불가; runtime probe 실패는 typed `Unsupported` |
+| Linux native shared-memory/signal provider | 전체 | 지원 안 함 | provider 없음; 별도 구현 계획 |
 | Windows, iOS, Android | 전체 | 지원 안 함 | provider 없음 |
 
 Rust MSRV는 `1.85.0`, TypeScript client의 Node.js 최소 버전은 20이다. Wire layout은 explicit
@@ -51,6 +52,11 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 - Production frame authentication/encryption은 필수이며 certificate identity, forward secrecy와 reconnect policy는 아직 없다.
 - Production WebKit origin별 binding policy는 아직 없다.
 - Wry/Tauri adapter는 macOS production provider만 지원하며 framework IPC를 payload fallback으로 사용하지 않는다.
+- Bun은 외부 adapter/addon이 아니라 source 내부 native integration으로 계획하며, 현재 embedding
+  bootstrap과 host-driven readiness 경계는 완료되지 않았다.
+- Windows/Linux native provider는 구현되지 않았으며
+  [`implementation-plan/14-windows-linux-providers.md`](implementation-plan/14-windows-linux-providers.md)의
+  독립 계획을 따른다.
 - Developer ID notarization/stapling과 WebKit macOS minor-release/x86_64 matrix는 아직 없다.
 - GitHub-hosted trusted signing과 immutable release evidence 자동화는 아직 완료되지 않았다.
 - Mach provider는 독립 process contract만 완료했으며 production WebKit 전환과 legacy provider 제거는

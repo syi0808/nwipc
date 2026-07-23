@@ -22,6 +22,8 @@
 | [10-observability-testing.md](10-observability-testing.md) | diagnostics, metrics, testkit, failure matrix |
 | [11-roadmap.md](11-roadmap.md) | 단계, 백로그, 완료 정의, ADR 결정사항 |
 | [12-mach-only-migration.md](12-mach-only-migration.md) | Mach-only production provider 전환 순서와 제거 게이트 |
+| [13-bun-native-integration.md](13-bun-native-integration.md) | Bun source 내부 native 연동 지원성 판단과 구현 게이트 |
+| [14-windows-linux-providers.md](14-windows-linux-providers.md) | Windows/Linux native provider 독립 계획 |
 
 Accepted decisions: [ADR 0001 — Domain, region layout, record wire contract](../adr/0001-domain-layout-record-wire-contract.md)
 
@@ -56,8 +58,9 @@ Mach migration parity baseline:
 후순위:
 
 - chunk pool
-- Bun
-- borrowed send/receive, Windows/Linux backend
+- Bun source 내부 native integration
+- borrowed send/receive
+- Windows/Linux native provider
 
 Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter, authentication/encryption,
 Mach provider contract와 chunk pool/borrowed API를
@@ -81,3 +84,5 @@ Phase 2 종료 시 ring/protocol/signal/session의 세부 crate가 지나치게 
 4. [Peer](07-peer.md), [Renderer/Client](08-renderer-client.md), [macOS/WebKit](09-macos-webkit.md)
 5. [검증 계획](10-observability-testing.md)과 [로드맵](11-roadmap.md)
 6. [Mach-only 전환 계획](12-mach-only-migration.md)
+7. [Bun native integration 판단](13-bun-native-integration.md)
+8. [Windows/Linux provider 계획](14-windows-linux-providers.md)

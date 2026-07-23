@@ -40,10 +40,12 @@
 - Graceful close timeout과 resource cleanup
 - WebView/framework dependency 부재 검사
 
-## 후순위
+## 확장
 
-- `nwipc-peer-bun`
-- Borrowed send/receive
+- Borrowed receive는 `Peer::try_receive_borrowed`로 제공한다.
+- Bun-specific adapter crate는 만들지 않는다. Bun source 내부 integration에 필요한 engine-neutral
+  embedding bootstrap/readiness contract는
+  [`13-bun-native-integration.md`](13-bun-native-integration.md)를 따른다.
 
 ## Async/Tokio 확장
 

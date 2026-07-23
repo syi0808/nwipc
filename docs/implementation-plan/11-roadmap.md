@@ -100,7 +100,8 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 5. [x] Authentication/encryption
 6. [x] Mach provider
 7. [x] Chunk pool/borrowed API
-8. [ ] Bun/타 플랫폼
+8. [ ] Bun native integration
+9. [ ] Windows/Linux provider
 
 Phase 8 항목은 production vertical slice의 통합 경로가 닫힌 뒤 착수한다. 완료된 fragmentation은
 production handshake의 capability 협상 결과에 따라 WebKit transport에서만 활성화한다.
@@ -151,6 +152,16 @@ Peer의 `try_receive_borrowed`는 검증이 끝난 transport frame의 payload를
 아닌 local API capability로 보고해 이전 endpoint와의 handshake를 깨지 않는다. Exhaustion backpressure,
 oversize/invalid configuration, uncommitted drop, FIFO slab reuse, concurrent SPSC와 workspace
 architecture/clippy/test gate를 완료 증거로 사용한다.
+
+Bun은 외부 `nwipc-bun` adapter나 FFI addon을 만들지 않는다. Bun source tree의 Rust crate graph에
+NWIPC core/peer crate를 직접 연결하고 Bun의 native binding 및 event loop에서 소유권과 readiness를
+관리한다. 현재 SDK가 재사용할 수 있는 범위와 선행 API gap, Bun fork에서의 구현 순서는
+[`13-bun-native-integration.md`](13-bun-native-integration.md)에서 관리한다.
+
+Windows/Linux는 Bun 작업의 하위 항목으로 취급하지 않는다. OS별 shared-memory, signal, capability
+transfer와 process lifecycle provider를 먼저 닫아야 하는 독립 확장이며
+[`14-windows-linux-providers.md`](14-windows-linux-providers.md)에서 별도 계획과 완료 게이트를
+관리한다.
 
 제품 provider를 Mach-only로 단순화하는 작업은
 [`12-mach-only-migration.md`](12-mach-only-migration.md)의 순서를 따른다. Mach right의 production
@@ -421,4 +432,5 @@ Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface�
 1. GitHub-hosted trusted signing과 release evidence 자동화
 2. Origin별 binding policy 확정
 3. macOS minor release별 signed process matrix 확대
-4. 남은 Phase 8 확장 재개
+4. Bun native integration 선행 API gap 해소
+5. Windows/Linux provider는 별도 roadmap에서 착수 판단
