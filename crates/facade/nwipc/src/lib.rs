@@ -1007,6 +1007,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn public_facade_connects_renderer_and_peer_without_payload_stream() {
         use nwipc_macos_transport::{MacosEndpointTransport, production_capabilities};
         use nwipc_peer_bootstrap::consume;
