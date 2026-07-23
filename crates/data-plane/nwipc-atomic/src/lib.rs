@@ -138,7 +138,7 @@ impl ProducerMemory {
         match &self.inner {
             ProducerInner::InProcess(inner) => Ok(inner.producer.load(Ordering::Relaxed)),
             ProducerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), PRODUCER_CURSOR_OFFSET)
+                mapping.load_u32_acquire(PRODUCER_CURSOR_OFFSET)
             }
         }
     }
@@ -152,7 +152,7 @@ impl ProducerMemory {
         match &self.inner {
             ProducerInner::InProcess(inner) => Ok(inner.consumer.load(Ordering::Acquire)),
             ProducerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), CONSUMER_CURSOR_OFFSET)
+                mapping.load_u32_acquire(CONSUMER_CURSOR_OFFSET)
             }
         }
     }
@@ -207,11 +207,7 @@ impl ProducerMemory {
         match &mut self.inner {
             ProducerInner::InProcess(inner) => inner.producer.store(cursor, Ordering::Release),
             ProducerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::store_u32_release(
-                    mapping.as_mut(),
-                    PRODUCER_CURSOR_OFFSET,
-                    cursor,
-                )?;
+                mapping.store_u32_release(PRODUCER_CURSOR_OFFSET, cursor)?;
             }
         }
         Ok(())
@@ -249,7 +245,7 @@ impl ConsumerMemory {
         match &self.inner {
             ConsumerInner::InProcess(inner) => Ok(inner.producer.load(Ordering::Acquire)),
             ConsumerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), PRODUCER_CURSOR_OFFSET)
+                mapping.load_u32_acquire(PRODUCER_CURSOR_OFFSET)
             }
         }
     }
@@ -263,7 +259,7 @@ impl ConsumerMemory {
         match &self.inner {
             ConsumerInner::InProcess(inner) => Ok(inner.consumer.load(Ordering::Relaxed)),
             ConsumerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::load_u32_acquire(mapping.as_ref(), CONSUMER_CURSOR_OFFSET)
+                mapping.load_u32_acquire(CONSUMER_CURSOR_OFFSET)
             }
         }
     }
@@ -316,11 +312,7 @@ impl ConsumerMemory {
         match &mut self.inner {
             ConsumerInner::InProcess(inner) => inner.consumer.store(cursor, Ordering::Release),
             ConsumerInner::Mapped { mapping, .. } => {
-                <dyn MappedRegion>::store_u32_release(
-                    mapping.as_mut(),
-                    CONSUMER_CURSOR_OFFSET,
-                    cursor,
-                )?;
+                mapping.store_u32_release(CONSUMER_CURSOR_OFFSET, cursor)?;
             }
         }
         Ok(())
