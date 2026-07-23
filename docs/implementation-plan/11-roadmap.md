@@ -95,8 +95,8 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 
 1. [x] Fragmentation (data-plane integration)
 2. [x] Async/Tokio
-3. [ ] Wry
-4. [ ] Tauri
+3. [x] Wry
+4. [x] Tauri
 5. [ ] Authentication/encryption
 6. [ ] Mach provider
 7. [ ] Chunk pool/borrowed API
@@ -111,6 +111,18 @@ Async/Tokio는 `nwipc-peer-async`의 runtime-neutral readiness contract와 `nwip
 분리한다. Adapter는 executor/task/thread를 소유하지 않으며 readiness 등록 뒤 operation을 다시 확인해
 lost wake-up 없이 readable/writable progress를 보장한다. Fake port backpressure/event contract,
 Tokio callback/polling recovery, zero interval 거부와 workspace gate를 완료 증거로 사용한다.
+
+Wry는 `nwipc-wry`의 기존 native configuration 병합 bridge와 `WebViewBuilder` extension으로
+injected-bundle 설정을 WebView 생성 전에 적용한다. WebView ID/session/generation mapping, attach,
+WebContent 종료 뒤 replacement와 stale generation 거부를 adapter가 담당하며 payload relay나 peer
+spawn 경로는 제공하지 않는다.
+
+Tauri는 `nwipc-tauri`의 plugin/builder extension, window label/session mapping과 app/window cleanup으로
+같은 host plan을 연결한다. Diagnostics command는 label과 generation만 반환하고 정상 payload command는
+등록하지 않는다. Unsupported startup의 fallback은 application policy hook이 `Abort` 또는 명시적
+`ContinueWithoutNwipc`를 선택하며 adapter가 fallback transport나 global runtime을 만들지 않는다.
+두 adapter 모두 public `nwipc::Session` 등록 경로, fake native configurator의 적용 순서,
+replacement/cleanup/stale-event contract와 workspace architecture/clippy/test gate를 완료 증거로 사용한다.
 
 ## 최초 백로그 상태
 

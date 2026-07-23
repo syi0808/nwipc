@@ -74,6 +74,8 @@ nwipc-process-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-proce
 nwipc-webkit-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-webkit-testkit" }
 nwipc-macos-transport = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-transport" }
 nwipc-appkit = { version = "=0.0.0", path = "crates/adapters/nwipc-appkit" }
+nwipc-wry = { version = "=0.0.0", path = "crates/adapters/nwipc-wry" }
+nwipc-tauri = { version = "=0.0.0", path = "crates/adapters/nwipc-tauri" }
 nwipc = { version = "=0.0.0", path = "crates/facade/nwipc" }
 tokio = { version = "1", default-features = false }
 

@@ -9,6 +9,7 @@
 | IOSurface + Darwin Notify provider | macOS arm64/x86_64 | 실험적 | provider contract, two-process tests, actual-provider release benchmark |
 | JSC binding | macOS arm64 | 실험적 | callback/teardown contract; signed E2E에서 load |
 | Runtime-neutral async / Tokio peer adapter | Linux/macOS, x86_64/arm64 | 실험적 | fake readiness contract, bounded polling recovery, workspace CI |
+| Wry 0.55 / Tauri 2.11 adapter | macOS 26.2 arm64 | 실험적 | builder configuration merge, framework lifecycle/cleanup, stale generation, workspace CI |
 | WKWebView injected bundle | macOS 26.2 arm64 | 제한적 지원 | SPI allowlist/probe와 trusted signed hardened E2E |
 | macOS 26.2 x86_64 | provider만 검증 | WebKit 지원 안 함 | trusted signed process matrix가 필요함 |
 | 그 외 macOS release | allowlist 밖 | 지원 안 함 | `Unsupported`로 fail closed |
@@ -37,6 +38,7 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 - Record inline payload 상한은 1 MiB이고 논리 메시지 상한은 채널 생성 시 ring 범위 안에서 설정한다.
 - Encryption/authentication과 reconnect policy는 아직 없다.
 - Production WebKit origin별 binding policy는 아직 없다.
+- Wry/Tauri adapter는 macOS production provider만 지원하며 framework IPC를 payload fallback으로 사용하지 않는다.
 - Developer ID notarization/stapling과 WebKit macOS minor-release/x86_64 matrix는 아직 없다.
 - GitHub-hosted trusted signing과 immutable release evidence 자동화는 아직 완료되지 않았다.
 - Benchmark 수치는 machine-specific baseline이며 회귀 임계값으로 사용하기 전에 같은 runner에서

@@ -19,6 +19,10 @@ Native peers can remain runtime-neutral with `nwipc-peer-async`, or opt into Tok
 bounded correctness polling through `nwipc-peer-tokio`. Both adapters preserve the synchronous
 core's nonblocking send/receive and typed backpressure contract without owning a task or thread.
 
+`nwipc-wry` and `nwipc-tauri` merge the verified macOS host plan before WebView creation and route
+only framework identity, lifecycle, cleanup, and redacted diagnostics. Neither adapter relays
+application payload through Wry/Tauri IPC or owns native-peer process policy.
+
 ## Development
 
 ```sh

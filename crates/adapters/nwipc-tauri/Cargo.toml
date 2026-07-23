@@ -1,0 +1,25 @@
+[package]
+name = "nwipc-tauri"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "adapter"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc.workspace = true
+nwipc-capabilities.workspace = true
+nwipc-error.workspace = true
+nwipc-macos-artifact.workspace = true
+nwipc-macos-host.workspace = true
+nwipc-macos-spi.workspace = true
+nwipc-types.workspace = true
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "=2.11.5", default-features = false }
+
+[lints]
+workspace = true

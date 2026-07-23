@@ -193,6 +193,25 @@ impl MacosHost {
             .map(|session| session.generation)
     }
 
+    /// Invalidates and removes one hosted session during framework teardown.
+    ///
+    /// # Errors
+    ///
+    /// Rejects unknown and stale session generations.
+    pub fn unregister(
+        &mut self,
+        session: SessionId,
+        generation: Generation,
+    ) -> Result<(), ErrorReport> {
+        let hosted = self.active_mut(session, generation)?;
+        hosted.state = hosted
+            .state
+            .transition(SessionEvent::Disconnect)?
+            .transition(SessionEvent::Close)?;
+        self.sessions.remove(&session);
+        Ok(())
+    }
+
     fn active_mut(
         &mut self,
         session: SessionId,
@@ -245,6 +264,25 @@ mod tests {
         hosted.state = hosted.state.transition(SessionEvent::Close).unwrap();
         hosted.generation = hosted.generation.checked_next().unwrap();
         assert_eq!(hosted.generation.get(), 5);
+    }
+
+    #[test]
+    fn unregister_closes_and_removes_generation() {
+        let session = SessionId::from_u128(9).unwrap();
+        let generation = Generation::new(2).unwrap();
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            session,
+            HostedSession {
+                generation,
+                state: SessionState::WaitingForRenderer,
+            },
+        );
+        let hosted = sessions.get_mut(&session).unwrap();
+        hosted.state = hosted.state.transition(SessionEvent::Disconnect).unwrap();
+        hosted.state = hosted.state.transition(SessionEvent::Close).unwrap();
+        sessions.remove(&session);
+        assert!(!sessions.contains_key(&session));
     }
 
     #[test]

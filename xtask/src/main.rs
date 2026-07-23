@@ -262,6 +262,12 @@ fn architecture_check() -> Result<(), String> {
             ));
         }
 
+        check_runtime_framework_dependency(&crate_name, &manifest, &mut violations);
+
+        if matches!(crate_name.as_str(), "nwipc-wry" | "nwipc-tauri") {
+            check_framework_adapter(&crate_name, &manifest, &mut violations);
+        }
+
         if crate_name.starts_with("nwipc-types")
             || crate_name.starts_with("nwipc-error")
             || crate_name.starts_with("nwipc-capabilities")
@@ -318,6 +324,44 @@ fn architecture_check() -> Result<(), String> {
         Ok(())
     } else {
         Err(violations.join("\n"))
+    }
+}
+
+fn check_runtime_framework_dependency(
+    crate_name: &str,
+    manifest: &str,
+    violations: &mut Vec<String>,
+) {
+    if crate_name.starts_with("nwipc-runtime")
+        && ["wry", "tauri"]
+            .iter()
+            .any(|dependency| manifest.contains(dependency))
+    {
+        violations.push(format!(
+            "{crate_name}: runtime must not depend on WebView frameworks"
+        ));
+    }
+}
+
+fn check_framework_adapter(crate_name: &str, manifest: &str, violations: &mut Vec<String>) {
+    for forbidden in [
+        "nwipc-ring-",
+        "nwipc-channel-",
+        "nwipc-memory-",
+        "nwipc-peer =",
+    ] {
+        if manifest.contains(forbidden) {
+            violations.push(format!(
+                "{crate_name}: framework adapter must not own payload dependency {forbidden}"
+            ));
+        }
+    }
+    if !manifest.contains("nwipc.workspace = true")
+        || !manifest.contains("nwipc-macos-host.workspace = true")
+    {
+        violations.push(format!(
+            "{crate_name}: framework adapter must use the public facade and macOS host"
+        ));
     }
 }
 
