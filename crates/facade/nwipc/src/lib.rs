@@ -130,7 +130,7 @@ impl ResourcePreparer for MacosPreparer {
         generation: Generation,
         providers: ProviderSelection,
     ) -> Result<PreparedResources, ErrorReport> {
-        if providers != ProviderSelection::MACH {
+        if providers != ProviderSelection::MACOS {
             return Err(configuration_error(
                 ErrorCode::Unsupported,
                 "public provider selection",
@@ -430,7 +430,7 @@ impl Nwipc {
     ///
     /// # Errors
     ///
-    /// Returns explicit `Unsupported` when Mach providers are unavailable.
+    /// Returns explicit `Unsupported` when `IOSurface`/Darwin providers are unavailable.
     pub fn initialize() -> Result<Self, ErrorReport> {
         Self::with_configuration(Configuration::default())
     }
@@ -450,7 +450,7 @@ impl Nwipc {
         };
         Ok(Self {
             configuration,
-            runtime: Runtime::new(ProviderSelection::MACH, preparer),
+            runtime: Runtime::new(ProviderSelection::MACOS, preparer),
             catalog,
             metrics: Metrics::new(),
             observations: Arc::new(Mutex::new(HashMap::new())),
@@ -782,8 +782,8 @@ fn diagnostic_entry(
         state: observation.state,
         topology: TransportTopology::direct(),
         capabilities: production_capabilities(),
-        memory_backend: DiagnosticMemoryBackend::Mach,
-        signal_backend: DiagnosticSignalBackend::Mach,
+        memory_backend: DiagnosticMemoryBackend::IoSurface,
+        signal_backend: DiagnosticSignalBackend::Hybrid,
         last_error: observation.last_failure.map(|failure| failure.code),
         last_failure: observation.last_failure,
         resources_cleaned: observation.cleanup == CleanupStatus::Complete,
@@ -930,9 +930,9 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn public_runtime_selects_mach_without_fallback() {
+    fn public_runtime_selects_iosurface_and_darwin_without_fallback() {
         let nwipc = Nwipc::initialize().unwrap();
-        assert_eq!(nwipc.runtime.providers(), ProviderSelection::MACH);
+        assert_eq!(nwipc.runtime.providers(), ProviderSelection::MACOS);
     }
 
     #[cfg(target_os = "macos")]
@@ -1105,11 +1105,11 @@ mod tests {
         let provider_diagnostics = nwipc.session_diagnostics(&session).unwrap();
         assert_eq!(
             provider_diagnostics.memory_backend,
-            DiagnosticMemoryBackend::Mach
+            DiagnosticMemoryBackend::IoSurface
         );
         assert_eq!(
             provider_diagnostics.signal_backend,
-            DiagnosticSignalBackend::Mach
+            DiagnosticSignalBackend::Hybrid
         );
         nwipc.close(&session).unwrap();
         let diagnostics = nwipc.diagnostics();

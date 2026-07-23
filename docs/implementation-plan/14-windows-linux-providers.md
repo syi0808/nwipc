@@ -10,7 +10,7 @@ provider vertical slice로 완성한다.
 
 - 공통 protocol과 in-process data plane은 Linux CI에서 검증된다.
 - process-test stream peer는 Linux/macOS에서 실험적으로 검증된다.
-- public production facade는 Mach provider만 선택한다.
+- public production facade는 IOSurface/Darwin macOS provider만 선택한다.
 - Windows/Linux shared-memory/signal production provider는 없다.
 
 즉 공통 crate가 해당 target에서 compile되는 사실을 native provider 지원으로 표시하지 않는다.

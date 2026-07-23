@@ -33,12 +33,12 @@ lower-level contract를 조립하면 protocol부터 Mach transport까지 native 
 |---|---|---|
 | Wire/protocol/fragment/crypto | engine과 executor에 독립적 | 그대로 재사용 가능 |
 | Native peer state machine | `nwipc-peer-core::NativePort`와 `PeerPort`가 sync/nonblocking contract 제공 | 그대로 재사용 가능 |
-| macOS production transport | `MacosEndpointTransport::attach`와 Mach provider가 공개됨 | lower-level 조립으로 재사용 가능 |
+| macOS production transport | `MacosEndpointTransport::attach`와 IOSurface/Darwin provider가 공개됨 | lower-level 조립으로 재사용 가능 |
 | Bootstrap decode | `nwipc-bootstrap-codec::decode`와 `PeerExpectation`/`NativePort::accept`가 공개됨 | Bun 내부에서 직접 조립 가능 |
 | Runtime integration | `PeerPort`가 sync/nonblocking이고 `nwipc-peer-async`가 readiness 의미론 제공 | Bun Rust event loop에 직접 연결 가능 |
 | JavaScript binding | Bun이 `bun_jsc`와 generated native binding을 Rust crate로 소유 | Bun 내부 native binding으로 구현 가능 |
 | Distribution | crate version이 `0.0.0`이고 workspace path dependency 중심 | Bun fork에서 vendoring 또는 source pin 필요 |
-| Windows/Linux native path | production facade가 Mach provider만 선택 | 지원하지 않음 |
+| Windows/Linux native path | production facade가 macOS provider만 선택 | 지원하지 않음 |
 
 `nwipc-peer::Peer::initialize()`가 env/stdin을 소비하는 것은 CLI facade의 제약일 뿐이다. Bun 내부
 crate는 bootstrap bytes를 decode한 뒤 `MacosEndpointTransport::attach`와 `NativePort::accept`를

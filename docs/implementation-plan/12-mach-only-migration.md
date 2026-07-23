@@ -103,19 +103,6 @@ transport에 연결되지 않았다. 현재 right 전달 rendezvous는 `bootstra
 - IOSurface/Darwin과 동일한 FIFO, fragmentation, backpressure, close/reset contract suite가 통과한다.
 - Production source와 diagnostics에 fallback provider 선택이 없다.
 
-구현 증거:
-
-- `PreparedMacosTransport`가 두 Mach VM mapping과 방향별 Mach signal resource를 generation
-  lifetime 동안 보유하고 bootstrap descriptor를 `MachMemory`/`MachPort`로 고정한다.
-- `MacosEndpointTransport`는 기존 mapped channel, correctness polling, HELLO/ACK 및 AEAD frame
-  경로를 변경하지 않고 Mach mapping과 방향별 port hint를 attach한다.
-- writable edge는 shared cursor polling으로 복구하고 endpoint마다 outbound send right와 inbound
-  single-listener receive right만 소비한다.
-- `public_facade_connects_renderer_and_peer_without_payload_stream`,
-  `public_runtime_selects_mach_without_fallback`,
-  `prepared_transport_exposes_only_mach_provider_tags`가 public selection, 양방향 data plane,
-  provider tag 및 diagnostics를 고정한다.
-
 검증 보정(2026-07-23, macOS 26.2 arm64):
 
 - 위 증거는 native process와 동일 task attach를 입증하지만 System WebContent sandbox의 실제

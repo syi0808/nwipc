@@ -13,7 +13,7 @@ use nwipc_crypto::{EndpointProtection, EndpointRole as CryptoEndpointRole, FRAME
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_layout::{OwnerRole, REGION_HEADER_SIZE, RegionLayout};
 use nwipc_memory_api::{MappingAccess, SharedMemoryProvider};
-use nwipc_memory_mach::{MachMemoryDescriptor, MachMemoryMapping, MachMemoryProvider};
+use nwipc_memory_iosurface::{IoSurfaceDescriptor, IoSurfaceMapping, IoSurfaceProvider};
 use nwipc_peer_core::PortTransport;
 use nwipc_protocol::{
     EndpointRole as ProtocolEndpointRole, HandshakeIdentity, InitiatorConfig, InitiatorHandshake,
@@ -24,18 +24,16 @@ use nwipc_renderer_api::{
     TransportEvent as RendererEvent,
 };
 use nwipc_renderer_bootstrap::RendererTransportFactory;
-use nwipc_signal_api::{SignalDirection, SignalListener, SignalSender, WaitOutcome};
-use nwipc_signal_mach::{
-    MachListener, MachSender, MachSignal, MachSignalDescriptor, MachSignalResource,
-};
+use nwipc_signal_api::{SignalDirection, SignalSender};
+use nwipc_signal_darwin::{DarwinListener, DarwinSender, DarwinSignal, DarwinSignalDescriptor};
 use nwipc_signal_poll::PollConfig;
 use nwipc_types::{Generation, SessionId};
 use nwipc_validation::RegionExpectation;
 
 const MEMORY_MAGIC: &[u8; 4] = b"NWM1";
 const SIGNAL_MAGIC: &[u8; 4] = b"NWS1";
+const IOSURFACE_DESCRIPTOR_LENGTH: usize = 20;
 const MEMORY_HEADER_LENGTH: usize = 24;
-const MEMORY_LENGTH_HEADER: usize = 4;
 
 /// Probes both production providers without allocating a session.
 ///
@@ -43,8 +41,8 @@ const MEMORY_LENGTH_HEADER: usize = 4;
 ///
 /// Returns explicit `Unsupported` when the current platform cannot attach production resources.
 pub fn ensure_available() -> Result<(), ErrorReport> {
-    MachMemoryProvider::initialize()?;
-    MachSignal::initialize()?;
+    IoSurfaceProvider::initialize()?;
+    DarwinSignal::initialize()?;
     Ok(())
 }
 
@@ -104,10 +102,8 @@ impl Default for ChannelConfiguration {
 
 /// Host-owned mappings and transferable descriptor bundles for one generation.
 pub struct PreparedMacosTransport {
-    renderer_to_peer: MachMemoryMapping,
-    peer_to_renderer: MachMemoryMapping,
-    renderer_signal: MachSignalResource,
-    peer_signal: MachSignalResource,
+    renderer_to_peer: IoSurfaceMapping,
+    peer_to_renderer: IoSurfaceMapping,
     memory: Vec<u8>,
     signal: Vec<u8>,
 }
@@ -124,7 +120,7 @@ impl PreparedMacosTransport {
         configuration: ChannelConfiguration,
     ) -> Result<Self, ErrorReport> {
         let configuration = configuration.validate()?;
-        let provider = MachMemoryProvider::initialize()?;
+        let provider = IoSurfaceProvider::initialize()?;
         let total_length =
             REGION_HEADER_SIZE
                 .checked_add(usize::try_from(configuration.capacity).map_err(|_| {
@@ -157,17 +153,13 @@ impl PreparedMacosTransport {
             )?,
         )?;
         let memory = encode_memory(configuration, &renderer_descriptor, &peer_descriptor)?;
-        let signal_provider = MachSignal::initialize()?;
-        let (renderer_signal, renderer_signal_descriptor) =
-            signal_provider.create(session_id, generation, SignalDirection::RendererToPeer)?;
-        let (peer_signal, peer_signal_descriptor) =
-            signal_provider.create(session_id, generation, SignalDirection::PeerToRenderer)?;
-        let signal = encode_signals(&renderer_signal_descriptor, &peer_signal_descriptor)?;
+        let signal = encode_signals(
+            &DarwinSignalDescriptor::new(session_id, generation, SignalDirection::RendererToPeer),
+            &DarwinSignalDescriptor::new(session_id, generation, SignalDirection::PeerToRenderer),
+        )?;
         Ok(Self {
             renderer_to_peer,
             peer_to_renderer,
-            renderer_signal,
-            peer_signal,
             memory,
             signal,
         })
@@ -179,26 +171,21 @@ impl PreparedMacosTransport {
     ///
     /// Returns a schema range error if the encoded provider payload is unsupported.
     pub fn memory_descriptor(&self) -> Result<OpaqueDescriptor, ErrorReport> {
-        OpaqueDescriptor::new(ProviderKind::MachMemory, self.memory.clone())
+        OpaqueDescriptor::new(ProviderKind::IoSurface, self.memory.clone())
     }
 
-    /// Provider-tagged Mach port descriptor bundle for bootstrap.
+    /// Provider-tagged hybrid signal descriptor bundle for bootstrap.
     ///
     /// # Errors
     ///
     /// Returns a schema range error if the encoded provider payload is unsupported.
     pub fn signal_descriptor(&self) -> Result<OpaqueDescriptor, ErrorReport> {
-        OpaqueDescriptor::new(ProviderKind::MachPort, self.signal.clone())
+        OpaqueDescriptor::new(ProviderKind::Hybrid, self.signal.clone())
     }
 
     /// Keeps the two owner mappings live without exposing their native identities.
     pub const fn mapping_count(&self) -> usize {
-        let _ = (
-            &self.renderer_to_peer,
-            &self.peer_to_renderer,
-            &self.renderer_signal,
-            &self.peer_signal,
-        );
+        let _ = (&self.renderer_to_peer, &self.peer_to_renderer);
         2
     }
 }
@@ -216,28 +203,25 @@ enum SignalPostBehavior {
 }
 
 #[derive(Clone, Debug)]
-struct E2eMachSender {
-    inner: Option<MachSender>,
+struct E2eDarwinSender {
+    inner: DarwinSender,
     behavior: SignalPostBehavior,
 }
 
-impl SignalSender for E2eMachSender {
+impl SignalSender for E2eDarwinSender {
     fn notify(&self) -> Result<(), ErrorReport> {
-        let Some(inner) = &self.inner else {
-            return Ok(());
-        };
         match self.behavior {
-            SignalPostBehavior::Immediate => inner.notify(),
+            SignalPostBehavior::Immediate => self.inner.notify(),
             #[cfg(feature = "fault-injection")]
             SignalPostBehavior::Dropped => Ok(()),
             #[cfg(feature = "fault-injection")]
             SignalPostBehavior::Duplicate => {
-                inner.notify()?;
-                inner.notify()
+                self.inner.notify()?;
+                self.inner.notify()
             }
             #[cfg(feature = "fault-injection")]
             SignalPostBehavior::Delayed => {
-                let sender = inner.clone();
+                let sender = self.inner.clone();
                 std::thread::Builder::new()
                     .name("nwipc-delayed-notification".into())
                     .spawn(move || {
@@ -253,36 +237,7 @@ impl SignalSender for E2eMachSender {
     }
 }
 
-struct MachWakeListener(Option<MachListener>);
-
-impl SignalListener for MachWakeListener {
-    fn try_wait(&mut self) -> Result<WaitOutcome, ErrorReport> {
-        self.0
-            .as_mut()
-            .map_or(Ok(WaitOutcome::TimedOut), SignalListener::try_wait)
-    }
-
-    fn wait_timeout(&mut self, timeout: Duration) -> Result<WaitOutcome, ErrorReport> {
-        self.0.as_mut().map_or_else(
-            || {
-                if !timeout.is_zero() {
-                    std::thread::sleep(timeout);
-                }
-                Ok(WaitOutcome::TimedOut)
-            },
-            |listener| listener.wait_timeout(timeout),
-        )
-    }
-
-    fn cancel(&mut self) {
-        if let Some(listener) = &mut self.0 {
-            listener.cancel();
-        }
-        self.0.take();
-    }
-}
-
-type MacosChannel = ChannelTransport<E2eMachSender, MachWakeListener>;
+type MacosChannel = ChannelTransport<E2eDarwinSender, DarwinListener>;
 
 /// Raw complete-frame transport attached from a validated bootstrap envelope.
 pub struct MacosEndpointTransport {
@@ -294,7 +249,7 @@ pub struct MacosEndpointTransport {
 }
 
 impl MacosEndpointTransport {
-    /// Attaches Mach memory entries and port hints for the requested endpoint role.
+    /// Attaches `IOSurface` and Darwin resources for the requested endpoint role.
     ///
     /// # Errors
     ///
@@ -309,8 +264,11 @@ impl MacosEndpointTransport {
         signal_behavior: SignalPostBehavior,
     ) -> Result<Self, ErrorReport> {
         if envelope.role() != role
-            || envelope.memory().provider() != ProviderKind::MachMemory
-            || envelope.signal().provider() != ProviderKind::MachPort
+            || envelope.memory().provider() != ProviderKind::IoSurface
+            || !matches!(
+                envelope.signal().provider(),
+                ProviderKind::DarwinNotify | ProviderKind::Hybrid
+            )
         {
             return Err(platform_error(
                 ErrorCode::ProtocolViolation,
@@ -321,7 +279,7 @@ impl MacosEndpointTransport {
             decode_memory(envelope.memory().bytes())?;
         let (renderer_signal, peer_signal) = decode_signals(envelope.signal().bytes())?;
         let generation = envelope.generation();
-        let memory = MachMemoryProvider::initialize()?;
+        let memory = IoSurfaceProvider::initialize()?;
         let (outbound_descriptor, inbound_descriptor, outbound_owner, inbound_owner) = match role {
             EndpointRole::Renderer => (
                 &renderer_descriptor,
@@ -347,23 +305,23 @@ impl MacosEndpointTransport {
             configuration.low_watermark,
             configuration.high_watermark,
         )?;
-        let signal = MachSignal::initialize()?;
+        let signal = DarwinSignal::initialize()?;
         let (outbound_signal, inbound_signal) = match role {
             EndpointRole::Renderer => (&renderer_signal, &peer_signal),
             EndpointRole::Peer => (&peer_signal, &renderer_signal),
         };
         let channel = ChannelTransport::new(
             endpoint,
-            E2eMachSender {
-                inner: Some(signal.sender(outbound_signal, generation)?),
+            E2eDarwinSender {
+                inner: signal.sender(outbound_signal, generation)?,
                 behavior: signal_behavior,
             },
-            MachWakeListener(None),
-            E2eMachSender {
-                inner: None,
+            signal.listener(outbound_signal, generation)?,
+            E2eDarwinSender {
+                inner: signal.sender(inbound_signal, generation)?,
                 behavior: SignalPostBehavior::Immediate,
             },
-            MachWakeListener(Some(signal.listener(inbound_signal, generation)?)),
+            signal.listener(inbound_signal, generation)?,
             PollConfig::default(),
         )?;
         let crypto_role = match role {
@@ -512,7 +470,7 @@ pub struct MacosRendererTransportFactory {
     faults: FaultInjection,
 }
 
-/// Mach-port hint transformations used by the signed process fault matrix.
+/// Darwin-notification transformations used by the signed process fault matrix.
 #[cfg(feature = "fault-injection")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum NotificationFault {
@@ -786,18 +744,10 @@ pub const fn production_capabilities() -> TransportCapabilities {
 
 fn encode_memory(
     configuration: ChannelConfiguration,
-    renderer: &MachMemoryDescriptor,
-    peer: &MachMemoryDescriptor,
+    renderer: &IoSurfaceDescriptor,
+    peer: &IoSurfaceDescriptor,
 ) -> Result<Vec<u8>, ErrorReport> {
-    let renderer = renderer.encode()?;
-    let peer = peer.encode()?;
-    let renderer_length = u16::try_from(renderer.len())
-        .map_err(|_| platform_error(ErrorCode::InvalidRange, "encode macOS memory bundle"))?;
-    let peer_length = u16::try_from(peer.len())
-        .map_err(|_| platform_error(ErrorCode::InvalidRange, "encode macOS memory bundle"))?;
-    let mut output = Vec::with_capacity(
-        MEMORY_HEADER_LENGTH + MEMORY_LENGTH_HEADER + renderer.len() + peer.len(),
-    );
+    let mut output = Vec::with_capacity(MEMORY_HEADER_LENGTH + IOSURFACE_DESCRIPTOR_LENGTH * 2);
     output.extend_from_slice(MEMORY_MAGIC);
     for value in [
         configuration.capacity,
@@ -808,10 +758,8 @@ fn encode_memory(
     ] {
         output.extend_from_slice(&value.to_le_bytes());
     }
-    output.extend_from_slice(&renderer_length.to_le_bytes());
-    output.extend_from_slice(&peer_length.to_le_bytes());
-    output.extend_from_slice(&renderer);
-    output.extend_from_slice(&peer);
+    output.extend_from_slice(&renderer.encode()?);
+    output.extend_from_slice(&peer.encode()?);
     Ok(output)
 }
 
@@ -820,12 +768,14 @@ fn decode_memory(
 ) -> Result<
     (
         ChannelConfiguration,
-        MachMemoryDescriptor,
-        MachMemoryDescriptor,
+        IoSurfaceDescriptor,
+        IoSurfaceDescriptor,
     ),
     ErrorReport,
 > {
-    if input.len() < MEMORY_HEADER_LENGTH + MEMORY_LENGTH_HEADER || &input[..4] != MEMORY_MAGIC {
+    if input.len() != MEMORY_HEADER_LENGTH + IOSURFACE_DESCRIPTOR_LENGTH * 2
+        || &input[..4] != MEMORY_MAGIC
+    {
         return Err(platform_error(
             ErrorCode::Truncated,
             "decode macOS memory bundle",
@@ -846,28 +796,14 @@ fn decode_memory(
         high_watermark: read(20)?,
     }
     .validate()?;
-    let renderer_length = usize::from(u16::from_le_bytes([input[24], input[25]]));
-    let peer_length = usize::from(u16::from_le_bytes([input[26], input[27]]));
-    let renderer_end = 28_usize
-        .checked_add(renderer_length)
-        .ok_or_else(|| platform_error(ErrorCode::InvalidRange, "decode macOS memory bundle"))?;
-    let peer_end = renderer_end
-        .checked_add(peer_length)
-        .ok_or_else(|| platform_error(ErrorCode::InvalidRange, "decode macOS memory bundle"))?;
-    if peer_end != input.len() {
-        return Err(platform_error(
-            ErrorCode::Truncated,
-            "decode macOS memory bundle",
-        ));
-    }
-    let renderer = MachMemoryDescriptor::decode(&input[28..renderer_end])?;
-    let peer = MachMemoryDescriptor::decode(&input[renderer_end..peer_end])?;
+    let renderer = IoSurfaceDescriptor::decode(&input[24..44])?;
+    let peer = IoSurfaceDescriptor::decode(&input[44..64])?;
     Ok((configuration, renderer, peer))
 }
 
 fn encode_signals(
-    renderer: &MachSignalDescriptor,
-    peer: &MachSignalDescriptor,
+    renderer: &DarwinSignalDescriptor,
+    peer: &DarwinSignalDescriptor,
 ) -> Result<Vec<u8>, ErrorReport> {
     let renderer = renderer.encode();
     let peer = peer.encode();
@@ -886,7 +822,7 @@ fn encode_signals(
 
 fn decode_signals(
     input: &[u8],
-) -> Result<(MachSignalDescriptor, MachSignalDescriptor), ErrorReport> {
+) -> Result<(DarwinSignalDescriptor, DarwinSignalDescriptor), ErrorReport> {
     if input.len() < 8 || &input[..4] != SIGNAL_MAGIC {
         return Err(platform_error(
             ErrorCode::Truncated,
@@ -908,8 +844,8 @@ fn decode_signals(
         ));
     }
     Ok((
-        MachSignalDescriptor::decode(&input[8..renderer_end])?,
-        MachSignalDescriptor::decode(&input[renderer_end..peer_end])?,
+        DarwinSignalDescriptor::decode(&input[8..renderer_end])?,
+        DarwinSignalDescriptor::decode(&input[renderer_end..peer_end])?,
     ))
 }
 
@@ -966,7 +902,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn prepared_transport_exposes_only_mach_provider_tags() {
+    fn prepared_transport_exposes_iosurface_and_darwin_provider_tags() {
         let prepared = PreparedMacosTransport::prepare(
             SessionId::from_u128(7).unwrap(),
             Generation::new(3).unwrap(),
@@ -976,11 +912,11 @@ mod tests {
 
         assert_eq!(
             prepared.memory_descriptor().unwrap().provider(),
-            ProviderKind::MachMemory
+            ProviderKind::IoSurface
         );
         assert_eq!(
             prepared.signal_descriptor().unwrap().provider(),
-            ProviderKind::MachPort
+            ProviderKind::Hybrid
         );
         assert_eq!(prepared.mapping_count(), 2);
     }
