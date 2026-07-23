@@ -145,18 +145,18 @@ P4:
 
 | 영역 | 현재 상태 | 남은 production gap |
 |---|---|---|
-| Domain, layout, record, protocol, validation | E2E 검증 | M6 cross-architecture release run |
-| Ring, flow, channel, fragmentation | E2E 검증 | M6 cross-architecture release run |
-| IOSurface, Darwin, polling/hybrid | E2E 검증 | Trusted identity와 x86_64 release run |
-| Bootstrap schema/codec | E2E 검증 | M6 cross-architecture release run |
-| Peer core/facade | E2E 검증 | M6 failure matrix release run |
-| Session, session machine, runtime | E2E 검증 | M6 lifecycle snapshot release run |
+| Domain, layout, record, protocol, validation | E2E 검증 | — |
+| Ring, flow, channel, fragmentation | E2E 검증 | — |
+| IOSurface, Darwin, polling/hybrid | E2E 검증 | — |
+| Bootstrap schema/codec | E2E 검증 | — |
+| Peer core/facade | E2E 검증 | — |
+| Session, session machine, runtime | E2E 검증 | — |
 | Renderer core, JSC, WebKit control plane | E2E 검증 | Origin별 binding policy |
-| WebKit process smoke | E2E 검증 | Trusted identity와 지원 OS matrix 확대 |
-| Diagnostics, metrics, top-level facade | Production 통합 | M6 remote release gate evidence |
+| WebKit process smoke | E2E 검증 | 지원 OS matrix 확대 |
+| Diagnostics, metrics, top-level facade | Production 통합 | Hosted trusted release automation |
 
-독립 provider와 signed WebKit smoke는 실제 환경 가능성을 검증했지만 전체 product call graph의 완료를
-의미하지 않는다. 다음 milestone은 새로운 provider나 framework 확장보다 production 경로 폐쇄를 우선한다.
+전체 product call graph와 지원 provider의 vertical slice는 닫혔다. 다음 단계는 hosted trusted release
+automation, origin policy와 지원 OS 확대를 우선한 뒤 Phase 8 확장을 재개한다.
 
 ## Production vertical slice 통합 milestone
 
@@ -250,9 +250,11 @@ Native peer helper도 `Peer::initialize`와 bootstrap-only stdin을 사용한다
 16 KiB+1, 1 MiB payload 및 high/low watermark recovery를 실제 IOSurface/Darwin-hybrid process에서
 검증하며 AppKit source와 architecture gate는 raw memory/payload frame 의존을 거부한다.
 
-2026-07-22 macOS 26.5.2 (25F84) arm64에서 ad-hoc hardened `cargo xtask webkit-e2e` 전체 matrix가
-통과했다. 생성 artifact와 scenario별 실행 로그 위치는 `target/NWIPC-E2E.app`,
-`target/webkit-e2e/`다. Fault build는 feature-gated hook으로 notification post를 drop/duplicate/delay하고,
+2026-07-23 macOS 26.2 (25C56) arm64에서 Apple Development identity로 서명한 hardened
+`cargo xtask webkit-e2e` 전체 matrix가 통과했다. 생성 artifact와 scenario별 실행 로그 위치는
+`target/NWIPC-E2E.app`, `target/webkit-e2e/`이며 영구 증거는
+[`docs/evidence/vertical-slice-3fecc42.md`](../evidence/vertical-slice-3fecc42.md)에 기록했다.
+Fault build는 feature-gated hook으로 notification post를 drop/duplicate/delay하고,
 writer를 cursor commit 전과 notification 전 commit 후에 종료한다. Peer helper의 관찰 결과와 public facade의
 동일 session ID/새 generation replacement가 각각 partial invisibility, committed visibility, stale resource
 격리를 검증한다.
@@ -267,13 +269,13 @@ message, callback, resource가 새 generation에 전달되지 않는다.
 - [x] Payload, secret, native handle을 제외하는 redaction schema와 snapshot compatibility 규칙 확정
 - [x] arm64/x86_64 fixture, sanitizer/Miri/fuzz, actual-provider benchmark, signed E2E CI 범위 명시
 
-완료: Failure matrix의 각 case에서 diagnostics만으로 backend/state/stable error/cleanup 결과를 식별할 수
-있고 전체 release gate가 통과한다.
+구현 완료: Failure matrix의 각 case에서 diagnostics만으로 backend/state/stable error/cleanup 결과를
+식별할 수 있다. Vertical slice 완료와 배포용 자동 release gate의 완료 판정은 분리한다.
 
 구현 artifact는 diagnostics schema v2, generation history/failure/cleanup snapshot, provider wakeup 집계,
 arm64/x86_64 actual-provider benchmark job, trusted-signing 전용 job이다. Compatibility와 redaction 규칙은
-`docs/diagnostics-schema.md`, 동일 commit release 조건은 `docs/release-gate.md`에 고정했다. 위 체크는
-`CI`, `Hardening`, `Release Gate(signed_e2e=true)`가 같은 commit에서 통과한 뒤 갱신한다.
+`docs/diagnostics-schema.md`, 동일 commit release 조건은 `docs/release-gate.md`에 고정했다. 배포용
+release candidate는 `CI`, `Hardening`, `Release Gate(signed_e2e=true)`가 같은 commit에서 통과해야 한다.
 
 ## Vertical slice 완료 정의
 
@@ -310,6 +312,19 @@ Operations:
 20. Unsafe/dependency/license/format/lint/test/package/fuzz/sanitizer CI가 통과한다.
 21. 각 완료 항목은 test 이름, CI job, 지원 matrix와 추적 가능하다.
 
+## Vertical slice 현재 판정
+
+- [x] 2026-07-23 기준 production vertical slice 완료
+
+동일 candidate `3fecc42715a5873e003c0c666b8cca3cdb530c02`에서 원격 `CI`/`Hardening`,
+macOS 15 arm64/x86_64 fixture·actual-provider gate와 macOS 26.2 arm64 로컬 trusted-identity
+hardened WebKit E2E가 통과했다. 기준별 연결은
+[`docs/vertical-slice-verification.md`](../vertical-slice-verification.md), 실행 증거는
+[`docs/evidence/vertical-slice-3fecc42.md`](../evidence/vertical-slice-3fecc42.md)에 고정한다.
+
+GitHub-hosted trusted signing은 운영 자동화 backlog다. `Release Gate / signed-webkit-e2e`와
+`release-evidence`가 성공하기 전까지 release candidate 완료로 해석하지 않는다.
+
 ## 완료 증거와 추적성
 
 각 milestone은 완료 선언과 함께 다음 표를 갱신한다.
@@ -320,8 +335,8 @@ Vertical slice의 21개 기준별 test/job/support 연결은
 |---|---|---|---|---|
 | 예: dropped signal recovery | hybrid channel adapter | provider contract + process fault test | hardening | macOS arm64 |
 | M4 public endpoint integration | `nwipc`, `nwipc-macos-transport`, `nwipc-peer` | `public_facade_connects_renderer_and_peer_without_payload_stream`, `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | Rust workspace test | macOS IOSurface + Darwin/hybrid |
-| M5 production WebKit E2E | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` notification/writer/peer/replacement matrix | manual signed E2E | macOS 26.5.2 arm64 ad-hoc; trusted identity와 x86_64는 미검증 |
-| M6 release candidate | `nwipc-diagnostics` schema v2, facade generation history, provider metrics | diagnostics/failure contract, actual-provider benchmark, cross-architecture fixtures | `CI`, `Hardening`, `Release Gate` | macOS 15 arm64/x86_64 provider gate; WebKit release는 trusted macOS 26.5.2 arm64 runner |
+| M5 production WebKit E2E | `nwipc-macos-bundle-shim`, signed AppKit/peer artifact | `renderer_bootstrap_is_canonical_and_one_shot`, `cargo xtask webkit-e2e` notification/writer/peer/replacement matrix | local trusted signed E2E | macOS 26.2 arm64 Apple Development |
+| M6 observability/release automation | `nwipc-diagnostics` schema v2, facade generation history, provider metrics | diagnostics/failure contract, actual-provider benchmark, cross-architecture fixtures | `CI`, `Hardening`, `Release Gate` | vertical slice 완료; hosted trusted release automation 보류 |
 
 - Unit test만 있는 기능은 단위 완료 이상으로 올리지 않는다.
 - 실제 provider 독립 test만 있는 기능은 Provider 통합 이상으로 올리지 않는다.
@@ -350,12 +365,7 @@ Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface�
 
 ## 현재 권장 착수 순서
 
-1. Clean CI baseline과 JSC flaky 제거
-2. Protocol/validation/handshake 구현
-3. Session/session-machine/runtime ownership 구현
-4. IOSurface/Darwin production channel adapter 구현
-5. Public facade와 peer/renderer transport 연결
-6. WebKit E2E를 production path로 교체
-7. Diagnostics/metrics와 failure snapshot 구현
-8. Cross-architecture/property/fuzz/process CI 강화
-9. 남은 Phase 8 확장 재개
+1. GitHub-hosted trusted signing과 release evidence 자동화
+2. Origin별 binding policy 확정
+3. macOS minor release별 signed process matrix 확대
+4. 남은 Phase 8 확장 재개

@@ -4,6 +4,14 @@ A release candidate is the same immutable commit for every gate below. A local p
 another commit is not substitutable. The release record links the `CI`, `Hardening`, and manually
 dispatched `Release Gate` workflow runs plus signed E2E artifacts.
 
+## Vertical slice와 release qualification
+
+Vertical slice milestone은 같은 candidate의 clean `CI`/`Hardening`, 양쪽 architecture/provider gate와
+기록된 로컬 trusted-identity hardened E2E로 완료할 수 있다. 이는 제품 호출 경로의 폐쇄를 판정하는
+개발 milestone이다. 배포용 release candidate에는 예외가 없으며 아래 자동 gate와 immutable
+`release-record`가 모두 성공해야 한다. 현재 vertical slice 증거는
+[`evidence/vertical-slice-3fecc42.md`](evidence/vertical-slice-3fecc42.md)에 기록한다.
+
 ## Required gates
 
 | Gate | Required scope | Workflow/job |
@@ -55,5 +63,5 @@ does not pass.
 
 Portable layout/protocol behavior is released for Linux/macOS x86_64 and arm64. IOSurface and
 Darwin/hybrid provider contracts are gated on macOS 15 arm64 and Intel runners. Production WebKit
-support remains the explicit allowlisted macOS 26.5.2 arm64 build until another signed process
+support remains the explicit allowlisted macOS 26.2 arm64 build until another signed process
 matrix is recorded; provider coverage alone does not expand the WebKit support claim.
