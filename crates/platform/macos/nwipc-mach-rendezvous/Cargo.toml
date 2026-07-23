@@ -1,18 +1,18 @@
 [package]
-name = "nwipc-signal-mach"
+name = "nwipc-mach-rendezvous"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [package.metadata.nwipc]
-layer = "signal"
+layer = "platform"
 stability = "experimental"
 owner = "nwipc"
 
 [dependencies]
+nwipc-bootstrap-schema.workspace = true
 nwipc-error.workspace = true
-nwipc-signal-api.workspace = true
 nwipc-mach-transfer.workspace = true
 nwipc-types.workspace = true
 

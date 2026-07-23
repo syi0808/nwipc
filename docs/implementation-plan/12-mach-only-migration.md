@@ -116,6 +116,20 @@ transport에 연결되지 않았다. 현재 right 전달 rendezvous는 `bootstra
   `prepared_transport_exposes_only_mach_provider_tags`가 public selection, 양방향 data plane,
   provider tag 및 diagnostics를 고정한다.
 
+검증 보정(2026-07-23, macOS 26.2 arm64):
+
+- 위 증거는 native process와 동일 task attach를 입증하지만 System WebContent sandbox의 실제
+  capability handoff까지 입증하지 않는다.
+- random per-generation name, 256-bit nonce, session/generation/role 인증, one-shot right move, ACK와
+  timeout cleanup을 구현한 `nwipc-mach-rendezvous` 실험은 native cross-process에서 성공했다.
+- 같은 실험을 signed/hardened WebKit에서 실행하면 sandbox extension 소비 뒤에도 arbitrary
+  per-PID Mach service lookup이 `BOOTSTRAP_NOT_PRIVILEGED (1100)`로 거부된다.
+- System WebKit의 bundle parameter는 secure-coded bytes만 전달하므로 Mach attachment로 control
+  right를 직접 넘길 수도 없다. 따라서 이 rendezvous는 feasibility artifact로만 보존하며
+  `nwipc-macos-transport` production dependency에서 제외한다.
+- WebKit IPC/sandbox 변경 또는 별도 지원 bridge 없이 MMP2의 System WebKit capability handoff와
+  MMP3는 완료로 판정하지 않는다.
+
 ### MMP3 — Signed/hardened WebKit 검증
 
 - AppKit host, injected bundle, native peer를 실제 signing/hardened runtime/sandbox 조건으로 실행

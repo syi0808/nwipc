@@ -1851,6 +1851,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-mach-rendezvous"
+version = "0.0.0"
+dependencies = [
+ "nwipc-bootstrap-schema",
+ "nwipc-error",
+ "nwipc-mach-transfer",
+ "nwipc-types",
+]
+
+[[package]]
 name = "nwipc-mach-transfer"
 version = "0.0.0"
 dependencies = [
@@ -1963,6 +1973,7 @@ name = "nwipc-memory-mach"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-mach-transfer",
  "nwipc-memory-api",
  "nwipc-types",
 ]
@@ -2213,6 +2224,7 @@ name = "nwipc-signal-mach"
 version = "0.0.0"
 dependencies = [
  "nwipc-error",
+ "nwipc-mach-transfer",
  "nwipc-signal-api",
  "nwipc-types",
 ]

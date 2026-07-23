@@ -7,6 +7,7 @@
 use std::fmt;
 
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
+use nwipc_mach_transfer::OwnedMachSendRight;
 use nwipc_memory_api::{MappedRegion, MappingAccess, RegionDescriptor, SharedMemoryProvider};
 use nwipc_types::Generation;
 
@@ -145,6 +146,19 @@ impl MachMemoryProvider {
             cross_process: cfg!(target_os = "macos"),
         }
     }
+
+    /// Creates a host mapping whose memory-entry right is exported only through authenticated
+    /// native capability transfer.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed allocation and memory-entry creation failures.
+    pub fn create_transfer_mapping(
+        self,
+        byte_len: usize,
+    ) -> Result<MachMemoryMapping, ErrorReport> {
+        platform::create_transfer(byte_len)
+    }
 }
 
 impl SharedMemoryProvider for MachMemoryProvider {
@@ -180,6 +194,37 @@ pub struct MachMemoryMapping {
     inner: platform::Mapping,
     byte_len: usize,
     access: MappingAccess,
+}
+
+impl MachMemoryMapping {
+    /// Duplicates the backing memory-entry send right for an authenticated native transfer.
+    ///
+    /// The returned task-local name owns one send-right reference. It must be adopted immediately
+    /// by a Mach message wrapper and must never be serialized or logged.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the mapping has no transferable entry or duplication fails.
+    pub fn duplicate_memory_entry_right(&self) -> Result<OwnedMachSendRight, ErrorReport> {
+        let raw = platform::duplicate_entry(&self.inner)?;
+        unsafe { OwnedMachSendRight::from_raw(raw) }
+    }
+
+    /// Maps a memory-entry send right already transferred into the current task.
+    ///
+    /// Ownership is represented by `OwnedMachSendRight`; the right is consumed on both success and
+    /// failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for invalid lengths, missing rights, or native mapping failure.
+    pub fn attach_memory_entry_right(
+        right: OwnedMachSendRight,
+        byte_len: usize,
+        access: MappingAccess,
+    ) -> Result<Self, ErrorReport> {
+        unsafe { platform::attach_entry(right.into_raw(), byte_len, access) }
+    }
 }
 
 impl fmt::Debug for MachMemoryMapping {
@@ -406,6 +451,8 @@ mod platform {
         ) -> KernReturn;
         fn mach_port_deallocate(task: MachPort, name: MachPort) -> KernReturn;
         fn mach_port_destroy(task: MachPort, name: MachPort) -> KernReturn;
+        fn mach_port_mod_refs(task: MachPort, name: MachPort, right: i32, delta: i32)
+        -> KernReturn;
         fn bootstrap_register(
             bootstrap: MachPort,
             service_name: *const c_char,
@@ -431,6 +478,7 @@ mod platform {
         address: MachVmAddress,
         allocated_len: MachVmSize,
         service: Option<Service>,
+        entry: MachPort,
     }
 
     unsafe impl Send for Mapping {}
@@ -439,6 +487,9 @@ mod platform {
         fn drop(&mut self) {
             self.service.take();
             let task = unsafe { mach_task_self_ };
+            if self.entry != MACH_PORT_NULL {
+                let _ = unsafe { mach_port_deallocate(task, self.entry) };
+            }
             let _ = unsafe { mach_vm_deallocate(task, self.address, self.allocated_len) };
         }
     }
@@ -507,12 +558,18 @@ mod platform {
                 return Err(error);
             }
         };
+        if let Err(error) = copy_send_right(entry, "retain Mach memory entry") {
+            drop(service);
+            let _ = unsafe { mach_vm_deallocate(task, address, allocated_len) };
+            return Err(error);
+        }
         Ok((
             MachMemoryMapping {
                 inner: Mapping {
                     address,
                     allocated_len,
                     service: Some(service),
+                    entry,
                 },
                 byte_len,
                 access: MappingAccess::ReadWrite,
@@ -523,6 +580,60 @@ mod platform {
                 generation,
             },
         ))
+    }
+
+    pub(super) fn create_transfer(byte_len: usize) -> Result<MachMemoryMapping, ErrorReport> {
+        if byte_len == 0 {
+            return Err(memory_error(
+                ErrorCode::InvalidRange,
+                "create transferable Mach memory",
+            ));
+        }
+        let allocated_len = MachVmSize::try_from(byte_len).map_err(|_| {
+            memory_error(ErrorCode::InvalidRange, "create transferable Mach memory")
+        })?;
+        let task = unsafe { mach_task_self_ };
+        let mut address = 0;
+        check(
+            unsafe { mach_vm_allocate(task, &raw mut address, allocated_len, VM_FLAGS_ANYWHERE) },
+            "allocate transferable Mach memory",
+        )?;
+        let mut entry_size = allocated_len;
+        let mut entry = MACH_PORT_NULL;
+        if let Err(error) = check(
+            unsafe {
+                mach_make_memory_entry_64(
+                    task,
+                    &raw mut entry_size,
+                    address,
+                    VM_PROT_READ | VM_PROT_WRITE,
+                    &raw mut entry,
+                    MACH_PORT_NULL,
+                )
+            },
+            "create transferable Mach memory entry",
+        ) {
+            let _ = unsafe { mach_vm_deallocate(task, address, allocated_len) };
+            return Err(error);
+        }
+        if entry_size < allocated_len {
+            let _ = unsafe { mach_port_deallocate(task, entry) };
+            let _ = unsafe { mach_vm_deallocate(task, address, allocated_len) };
+            return Err(memory_error(
+                ErrorCode::InvalidRange,
+                "validate transferable Mach memory entry",
+            ));
+        }
+        Ok(MachMemoryMapping {
+            inner: Mapping {
+                address,
+                allocated_len,
+                service: None,
+                entry,
+            },
+            byte_len,
+            access: MappingAccess::ReadWrite,
+        })
     }
 
     pub(super) fn attach(
@@ -563,10 +674,88 @@ mod platform {
                 address,
                 allocated_len: size,
                 service: None,
+                entry: MACH_PORT_NULL,
             },
             byte_len: descriptor.byte_len,
             access,
         })
+    }
+
+    pub(super) fn duplicate_entry(mapping: &Mapping) -> Result<MachPort, ErrorReport> {
+        if mapping.entry == MACH_PORT_NULL {
+            return Err(memory_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "duplicate Mach memory entry",
+            ));
+        }
+        copy_send_right(mapping.entry, "duplicate Mach memory entry")?;
+        Ok(mapping.entry)
+    }
+
+    pub(super) unsafe fn attach_entry(
+        entry: MachPort,
+        byte_len: usize,
+        access: MappingAccess,
+    ) -> Result<MachMemoryMapping, ErrorReport> {
+        if entry == MACH_PORT_NULL || byte_len == 0 {
+            if entry != MACH_PORT_NULL {
+                let _ = unsafe { mach_port_deallocate(mach_task_self_, entry) };
+            }
+            return Err(memory_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "adopt Mach memory entry",
+            ));
+        }
+        let Ok(size) = MachVmSize::try_from(byte_len) else {
+            let _ = unsafe { mach_port_deallocate(mach_task_self_, entry) };
+            return Err(memory_error(
+                ErrorCode::InvalidRange,
+                "attach Mach memory entry",
+            ));
+        };
+        let protections = match access {
+            MappingAccess::ReadOnly => VM_PROT_READ,
+            MappingAccess::ReadWrite => VM_PROT_READ | VM_PROT_WRITE,
+        };
+        let mut address = 0;
+        let result = check(
+            unsafe {
+                mach_vm_map(
+                    mach_task_self_,
+                    &raw mut address,
+                    size,
+                    0,
+                    VM_FLAGS_ANYWHERE,
+                    entry,
+                    0,
+                    0,
+                    protections,
+                    protections,
+                    VM_INHERIT_NONE,
+                )
+            },
+            "map transferred Mach memory entry",
+        );
+        let _ = unsafe { mach_port_deallocate(mach_task_self_, entry) };
+        result?;
+        Ok(MachMemoryMapping {
+            inner: Mapping {
+                address,
+                allocated_len: size,
+                service: None,
+                entry: MACH_PORT_NULL,
+            },
+            byte_len,
+            access,
+        })
+    }
+
+    fn copy_send_right(port: MachPort, operation: &'static str) -> Result<(), ErrorReport> {
+        const MACH_PORT_RIGHT_SEND: i32 = 0;
+        check(
+            unsafe { mach_port_mod_refs(mach_task_self_, port, MACH_PORT_RIGHT_SEND, 1) },
+            operation,
+        )
     }
 
     pub(super) fn read(mapping: &Mapping, offset: usize, output: &mut [u8]) {
@@ -834,11 +1023,27 @@ mod platform {
         Err(ErrorReport::unsupported("create Mach memory"))
     }
 
+    pub(super) fn create_transfer(_: usize) -> Result<MachMemoryMapping, ErrorReport> {
+        Err(ErrorReport::unsupported("create transferable Mach memory"))
+    }
+
     pub(super) fn attach(
         _: &MachMemoryDescriptor,
         _: MappingAccess,
     ) -> Result<MachMemoryMapping, ErrorReport> {
         Err(ErrorReport::unsupported("attach Mach memory"))
+    }
+
+    pub(super) fn duplicate_entry(_: &Mapping) -> Result<u32, ErrorReport> {
+        Err(ErrorReport::unsupported("duplicate Mach memory entry"))
+    }
+
+    pub(super) unsafe fn attach_entry(
+        _: u32,
+        _: usize,
+        _: MappingAccess,
+    ) -> Result<MachMemoryMapping, ErrorReport> {
+        Err(ErrorReport::unsupported("attach Mach memory entry"))
     }
 
     pub(super) const fn read(_: &Mapping, _: usize, _: &mut [u8]) {}

@@ -7,6 +7,7 @@ use std::fmt;
 use std::time::Duration;
 
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
+use nwipc_mach_transfer::{OwnedMachReceiveRight, OwnedMachSendRight};
 use nwipc_signal_api::{SignalDirection, SignalListener, SignalSender, WaitOutcome};
 use nwipc_types::{Generation, SessionId};
 
@@ -128,6 +129,16 @@ impl MachSignal {
         platform::create(session_id, generation, direction)
     }
 
+    /// Creates a directional port whose rights are handed off by an external authenticated
+    /// capability transfer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed native port allocation failure.
+    pub fn create_transfer_resource(self) -> Result<MachTransferSignalResource, ErrorReport> {
+        platform::create_transfer_resource().map(|inner| MachTransferSignalResource { inner })
+    }
+
     /// Opens a sender after validating the active generation.
     ///
     /// # Errors
@@ -164,6 +175,43 @@ pub struct MachSignalResource {
     _inner: platform::Resource,
 }
 
+/// Host-owned directional signal port awaiting endpoint capability transfer.
+pub struct MachTransferSignalResource {
+    inner: platform::TransferResource,
+}
+
+impl MachTransferSignalResource {
+    /// Duplicates one outbound send-right reference.
+    ///
+    /// The returned task-local name must be adopted immediately and never serialized or logged.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed native right-duplication failure.
+    pub fn duplicate_sender_right(&self) -> Result<OwnedMachSendRight, ErrorReport> {
+        let raw = platform::duplicate_transfer_sender(&self.inner)?;
+        unsafe { OwnedMachSendRight::from_raw(raw) }
+    }
+
+    /// Moves the sole receive right out for the endpoint listener.
+    ///
+    /// The returned task-local name must be adopted immediately and never serialized or logged.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the receive right was already moved.
+    pub fn take_listener_right(&mut self) -> Result<OwnedMachReceiveRight, ErrorReport> {
+        let raw = platform::take_transfer_listener(&mut self.inner)?;
+        unsafe { OwnedMachReceiveRight::from_raw(raw) }
+    }
+}
+
+impl fmt::Debug for MachTransferSignalResource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MachTransferSignalResource(<redacted>)")
+    }
+}
+
 impl fmt::Debug for MachSignalResource {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -175,6 +223,20 @@ impl fmt::Debug for MachSignalResource {
 
 /// Owned Mach send right.
 pub struct MachSender(platform::SendRight);
+
+impl MachSender {
+    /// Adopts one send-right reference transferred into the current task.
+    ///
+    /// Ownership is represented by `OwnedMachSendRight` and is consumed on both success and
+    /// failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the transferred right cannot be adopted.
+    pub fn from_transferred_send_right(right: OwnedMachSendRight) -> Result<Self, ErrorReport> {
+        unsafe { platform::sender_from_raw(right.into_raw()) }.map(Self)
+    }
+}
 
 impl fmt::Debug for MachSender {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -197,6 +259,23 @@ impl SignalSender for MachSender {
 /// Owned Mach receive right.
 pub struct MachListener {
     inner: Option<platform::ReceiveRight>,
+}
+
+impl MachListener {
+    /// Adopts the uniquely owned receive right transferred into the current task.
+    ///
+    /// Unique ownership is represented by `OwnedMachReceiveRight` and is consumed on both success
+    /// and failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when listener setup or no-senders notification registration fails.
+    pub fn from_transferred_receive_right(
+        right: OwnedMachReceiveRight,
+    ) -> Result<Self, ErrorReport> {
+        unsafe { platform::listener_from_raw(right.into_raw()) }
+            .map(|inner| Self { inner: Some(inner) })
+    }
 }
 
 impl fmt::Debug for MachListener {
@@ -401,6 +480,22 @@ mod platform {
         worker: Option<JoinHandle<()>>,
     }
 
+    pub(super) struct TransferResource {
+        port: MachPort,
+        owns_receive: bool,
+    }
+
+    impl Drop for TransferResource {
+        fn drop(&mut self) {
+            let task = unsafe { mach_task_self_ };
+            if self.owns_receive {
+                let _ = unsafe { mach_port_destroy(task, self.port) };
+            } else {
+                let _ = unsafe { mach_port_deallocate(task, self.port) };
+            }
+        }
+    }
+
     impl Drop for Resource {
         fn drop(&mut self) {
             let task = unsafe { mach_task_self_ };
@@ -495,6 +590,78 @@ mod platform {
                 generation,
             },
         ))
+    }
+
+    pub(super) fn create_transfer_resource() -> Result<TransferResource, ErrorReport> {
+        allocate_port("allocate transferable Mach signal").map(|port| TransferResource {
+            port,
+            owns_receive: true,
+        })
+    }
+
+    pub(super) fn duplicate_transfer_sender(
+        resource: &TransferResource,
+    ) -> Result<MachPort, ErrorReport> {
+        check(
+            unsafe { mach_port_mod_refs(mach_task_self_, resource.port, MACH_PORT_RIGHT_SEND, 1) },
+            "duplicate transferable Mach sender",
+        )?;
+        Ok(resource.port)
+    }
+
+    pub(super) fn take_transfer_listener(
+        resource: &mut TransferResource,
+    ) -> Result<MachPort, ErrorReport> {
+        if !resource.owns_receive {
+            return Err(signal_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "move transferable Mach listener",
+            ));
+        }
+        resource.owns_receive = false;
+        Ok(resource.port)
+    }
+
+    pub(super) unsafe fn sender_from_raw(raw: MachPort) -> Result<SendRight, ErrorReport> {
+        if raw == MACH_PORT_NULL {
+            return Err(signal_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "adopt transferred Mach sender",
+            ));
+        }
+        Ok(SendRight(raw))
+    }
+
+    pub(super) unsafe fn listener_from_raw(raw: MachPort) -> Result<ReceiveRight, ErrorReport> {
+        if raw == MACH_PORT_NULL {
+            return Err(signal_error(
+                ErrorCode::RequiredCapabilityMissing,
+                "adopt transferred Mach listener",
+            ));
+        }
+        let task = unsafe { mach_task_self_ };
+        let mut previous = MACH_PORT_NULL;
+        if let Err(error) = check(
+            unsafe {
+                mach_port_request_notification(
+                    task,
+                    raw,
+                    MACH_NOTIFY_NO_SENDERS,
+                    1,
+                    raw,
+                    MACH_MSG_TYPE_MAKE_SEND_ONCE,
+                    &raw mut previous,
+                )
+            },
+            "arm transferred Mach no-senders notification",
+        ) {
+            let _ = unsafe { mach_port_destroy(task, raw) };
+            return Err(error);
+        }
+        if previous != MACH_PORT_NULL {
+            let _ = unsafe { mach_port_deallocate(task, previous) };
+        }
+        Ok(ReceiveRight(raw))
     }
 
     pub(super) fn sender(descriptor: &MachSignalDescriptor) -> Result<MachSender, ErrorReport> {
@@ -806,6 +973,7 @@ mod platform {
     };
 
     pub(super) struct Resource;
+    pub(super) struct TransferResource;
     pub(super) struct SendRight;
     pub(super) struct ReceiveRight;
 
@@ -823,6 +991,28 @@ mod platform {
 
     pub(super) fn listener(_: &MachSignalDescriptor) -> Result<MachListener, ErrorReport> {
         Err(ErrorReport::unsupported("open Mach listener"))
+    }
+
+    pub(super) fn create_transfer_resource() -> Result<TransferResource, ErrorReport> {
+        Err(ErrorReport::unsupported("create transferable Mach signal"))
+    }
+
+    pub(super) fn duplicate_transfer_sender(_: &TransferResource) -> Result<u32, ErrorReport> {
+        Err(ErrorReport::unsupported(
+            "duplicate transferable Mach sender",
+        ))
+    }
+
+    pub(super) fn take_transfer_listener(_: &mut TransferResource) -> Result<u32, ErrorReport> {
+        Err(ErrorReport::unsupported("move transferable Mach listener"))
+    }
+
+    pub(super) unsafe fn sender_from_raw(_: u32) -> Result<SendRight, ErrorReport> {
+        Err(ErrorReport::unsupported("adopt transferred Mach sender"))
+    }
+
+    pub(super) unsafe fn listener_from_raw(_: u32) -> Result<ReceiveRight, ErrorReport> {
+        Err(ErrorReport::unsupported("adopt transferred Mach listener"))
     }
 
     pub(super) fn clone_sender(_: &SendRight) -> SendRight {

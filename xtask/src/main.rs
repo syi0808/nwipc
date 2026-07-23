@@ -20,6 +20,7 @@ const UNSAFE_CRATES: &[&str] = &[
     "nwipc-signal-darwin",
     "nwipc-signal-mach",
     "nwipc-mach-transfer",
+    "nwipc-mach-rendezvous",
     "nwipc-renderer-jsc",
     "nwipc-macos-spi",
     "nwipc-macos-bundle-shim",
@@ -28,10 +29,11 @@ const UNSAFE_CRATES: &[&str] = &[
 const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/data-plane/nwipc-atomic", 5),
     ("crates/memory/nwipc-memory-iosurface", 28),
-    ("crates/memory/nwipc-memory-mach", 43),
+    ("crates/memory/nwipc-memory-mach", 60),
     ("crates/signal/nwipc-signal-darwin", 5),
-    ("crates/signal/nwipc-signal-mach", 47),
+    ("crates/signal/nwipc-signal-mach", 63),
     ("crates/platform/macos/nwipc-mach-transfer", 16),
+    ("crates/platform/macos/nwipc-mach-rendezvous", 29),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
     ("crates/platform/macos/nwipc-macos-bundle-shim", 11),
@@ -318,6 +320,7 @@ fn architecture_check() -> Result<(), String> {
         );
     }
     check_mach_transfer(&root, &mut violations)?;
+    check_experimental_rendezvous(&root, &mut violations)?;
     let appkit_harness = read(&root.join("native/macos/appkit/main.m"))?;
     for forbidden in ["IOSurface", "EchoFrame", "ECHO_PAYLOAD", "MappedRegion"] {
         if appkit_harness.contains(forbidden) {
@@ -333,6 +336,17 @@ fn architecture_check() -> Result<(), String> {
     } else {
         Err(violations.join("\n"))
     }
+}
+
+fn check_experimental_rendezvous(root: &Path, violations: &mut Vec<String>) -> Result<(), String> {
+    let production_transport =
+        read(&root.join("crates/platform/macos/nwipc-macos-transport/Cargo.toml"))?;
+    if production_transport.contains("nwipc-mach-rendezvous") {
+        violations.push(
+            "nwipc-macos-transport: experimental Mach rendezvous must not enter production".into(),
+        );
+    }
+    Ok(())
 }
 
 fn check_mach_transfer(root: &Path, violations: &mut Vec<String>) -> Result<(), String> {
