@@ -36,7 +36,7 @@ const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/platform/macos/nwipc-mach-rendezvous", 29),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
-    ("crates/platform/macos/nwipc-macos-bundle-shim", 11),
+    ("crates/platform/macos/nwipc-macos-bundle-shim", 33),
 ];
 
 fn main() -> ExitCode {

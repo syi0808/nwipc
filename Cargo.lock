@@ -1911,6 +1911,8 @@ dependencies = [
  "nwipc-macos-transport",
  "nwipc-renderer-api",
  "nwipc-renderer-bootstrap",
+ "nwipc-renderer-jsc",
+ "nwipc-types",
  "nwipc-webkit-testkit",
 ]
 

@@ -23,6 +23,8 @@ nwipc-macos-bundle-api.workspace = true
 nwipc-macos-transport.workspace = true
 nwipc-renderer-api.workspace = true
 nwipc-renderer-bootstrap.workspace = true
+nwipc-renderer-jsc = { path = "../../../renderer/nwipc-renderer-jsc" }
+nwipc-types.workspace = true
 nwipc-webkit-testkit.workspace = true
 
 [lints.rust]

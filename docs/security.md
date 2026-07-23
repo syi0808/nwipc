@@ -47,7 +47,7 @@ Safe crate에서 unsafe token을 쓰는 것은 `architecture-check`가 차단한
 | `nwipc-mach-rendezvous` | 29 | experimental one-shot service publication/lookup, sandbox extension lifetime, nonce authentication, ACK/timeout cleanup; System WebKit production path에서 제외 |
 | `nwipc-renderer-jsc` | 76 | live JSC context, callback panic containment, protect/unprotect pairing, typed-array copy-before-return |
 | `nwipc-macos-spi` | 4 | non-null Objective-C class/selector/method probe before invocation |
-| `nwipc-macos-bundle-shim` | 11 | ABI entry panic containment, WebKit object lifetime, checked callback arguments, checked notify state registration/read/cancel |
+| `nwipc-macos-bundle-shim` | 33 | ABI entry panic containment, WebKit page/JSC callback lifetime and main-thread affinity, checked callback arguments, checked notify state registration/read/cancel |
 
 감사 범위는 `src/**/*.rs`이며 test-only JSC FFI도 포함한다. 공개 unsafe 함수는 `# Safety` 계약을
 제공하고, 각 dereference/FFI 묶음의 전제는 해당 low-level crate에서 유지한다.

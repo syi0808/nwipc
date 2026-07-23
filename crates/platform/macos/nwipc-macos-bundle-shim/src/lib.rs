@@ -16,6 +16,10 @@ use nwipc_renderer_api::{RendererTransport, SendDisposition, TransportEvent};
 #[cfg(target_os = "macos")]
 use nwipc_renderer_bootstrap::RendererBootstrap;
 #[cfg(target_os = "macos")]
+use nwipc_renderer_jsc::{JscBinding, JscContext};
+#[cfg(target_os = "macos")]
+use nwipc_types::DocumentGeneration;
+#[cfg(target_os = "macos")]
 use nwipc_webkit_testkit::{
     EXACT_INLINE_LENGTH, FRAGMENTED_MESSAGE_LENGTH, MAXIMUM_MESSAGE_LENGTH,
 };
@@ -29,6 +33,8 @@ static ENTRYPOINT: OnceLock<Mutex<Option<Box<dyn BundleEntrypoint>>>> = OnceLock
 static INITIALIZATION_FAILED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static E2E_CONFIGURATION: OnceLock<E2eConfiguration> = OnceLock::new();
+#[cfg(target_os = "macos")]
+static RENDERER_BOOTSTRAP: OnceLock<Vec<u8>> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 struct E2eConfiguration {
@@ -115,7 +121,11 @@ pub fn initialization_failed() -> bool {
 #[allow(non_snake_case)]
 pub extern "C" fn WKBundleInitialize(bundle: *mut c_void, _user_data: *mut c_void) {
     if catch_unwind(AssertUnwindSafe(|| {
-        configure_e2e(bundle);
+        match copy_bundle_parameter(bundle, "nwipc.mode").as_deref() {
+            Some("renderer") => configure_renderer(bundle),
+            Some("e2e") => configure_e2e(bundle),
+            _ => INITIALIZATION_FAILED.store(true, Ordering::Release),
+        }
         post_e2e_load_marker();
         start_e2e_transport_matrix();
         let slot = ENTRYPOINT.get_or_init(|| Mutex::new(None));
@@ -127,6 +137,212 @@ pub extern "C" fn WKBundleInitialize(bundle: *mut c_void, _user_data: *mut c_voi
     {
         INITIALIZATION_FAILED.store(true, Ordering::Release);
     }
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    static JSC_BINDING: std::cell::RefCell<Option<JscBinding>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static DOCUMENT_GENERATION: std::cell::Cell<u64> = const {
+        std::cell::Cell::new(1)
+    };
+}
+
+#[cfg(target_os = "macos")]
+fn configure_renderer(bundle: *mut c_void) {
+    let Some(encoded) = copy_bundle_parameter(bundle, "nwipc.renderer-bootstrap") else {
+        return;
+    };
+    let Some(bootstrap) = decode_hex(&encoded) else {
+        INITIALIZATION_FAILED.store(true, Ordering::Release);
+        return;
+    };
+    if nwipc_bootstrap_codec::decode(&bootstrap).is_err()
+        || RENDERER_BOOTSTRAP.set(bootstrap).is_err()
+    {
+        INITIALIZATION_FAILED.store(true, Ordering::Release);
+        return;
+    }
+    unsafe {
+        install_webkit_clients(bundle);
+        install_dispatch_timer();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct BundleClient {
+    version: i32,
+    client_info: *const c_void,
+    did_create_page: Option<unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void)>,
+    will_destroy_page: Option<unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void)>,
+    did_initialize_page_group: *const c_void,
+    did_receive_message: *const c_void,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct PageLoaderClient {
+    version: i32,
+    client_info: *const c_void,
+    callbacks: [*const c_void; 18],
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn install_webkit_clients(bundle: *mut c_void) {
+    #[link(name = "WebKit", kind = "framework")]
+    unsafe extern "C" {
+        fn WKBundleSetClient(bundle: *mut c_void, client: *mut BundleClient);
+    }
+    let mut client = BundleClient {
+        version: 0,
+        client_info: std::ptr::null(),
+        did_create_page: Some(did_create_page),
+        will_destroy_page: Some(will_destroy_page),
+        did_initialize_page_group: std::ptr::null(),
+        did_receive_message: std::ptr::null(),
+    };
+    unsafe { WKBundleSetClient(bundle, &mut client) };
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn did_create_page(
+    _bundle: *mut c_void,
+    page: *mut c_void,
+    _client_info: *const c_void,
+) {
+    #[link(name = "WebKit", kind = "framework")]
+    unsafe extern "C" {
+        fn WKBundlePageSetPageLoaderClient(page: *mut c_void, client: *mut PageLoaderClient);
+    }
+    let mut callbacks = [std::ptr::null(); 18];
+    callbacks[14] = did_clear_window_object as *const c_void;
+    let mut client = PageLoaderClient {
+        version: 0,
+        client_info: std::ptr::null(),
+        callbacks,
+    };
+    unsafe { WKBundlePageSetPageLoaderClient(page, &mut client) };
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn will_destroy_page(
+    _bundle: *mut c_void,
+    _page: *mut c_void,
+    _client_info: *const c_void,
+) {
+    teardown_binding();
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn did_clear_window_object(
+    _page: *mut c_void,
+    frame: *mut c_void,
+    world: *mut c_void,
+    _client_info: *const c_void,
+) {
+    #[link(name = "WebKit", kind = "framework")]
+    unsafe extern "C" {
+        fn WKBundleFrameIsMainFrame(frame: *mut c_void) -> bool;
+        fn WKBundleFrameGetJavaScriptContextForWorld(
+            frame: *mut c_void,
+            world: *mut c_void,
+        ) -> *const c_void;
+        fn WKBundleScriptWorldNormalWorld() -> *mut c_void;
+    }
+    if !unsafe { WKBundleFrameIsMainFrame(frame) }
+        || world != unsafe { WKBundleScriptWorldNormalWorld() }
+    {
+        return;
+    }
+    teardown_binding();
+    let context = unsafe { WKBundleFrameGetJavaScriptContextForWorld(frame, world) };
+    let Some(bootstrap) = RENDERER_BOOTSTRAP.get().cloned() else {
+        return;
+    };
+    let generation = DOCUMENT_GENERATION.with(|next| {
+        let generation = DocumentGeneration::new(next.get());
+        next.set(next.get().saturating_add(1));
+        generation
+    });
+    let Some(generation) = generation else {
+        INITIALIZATION_FAILED.store(true, Ordering::Release);
+        return;
+    };
+    let binding = unsafe { JscContext::from_raw(context) };
+    let binding = JscBinding::install(binding, generation, move || {
+        let envelope = nwipc_bootstrap_codec::decode(&bootstrap)?;
+        let session = envelope.session_id();
+        let generation = envelope.generation();
+        let protocol = envelope.protocols().minimum();
+        let mut factory = MacosRendererTransportFactory::default();
+        RendererBootstrap::open_transport(envelope, session, generation, protocol, &mut factory)
+            .map(|transport| Box::new(transport) as Box<dyn RendererTransport>)
+    });
+    match binding {
+        Ok(binding) => JSC_BINDING.with(|slot| *slot.borrow_mut() = Some(binding)),
+        Err(_) => INITIALIZATION_FAILED.store(true, Ordering::Release),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn teardown_binding() {
+    JSC_BINDING.with(|slot| {
+        if let Some(mut binding) = slot.borrow_mut().take() {
+            let _ = binding.teardown();
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn install_dispatch_timer() {
+    type TimerCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFAbsoluteTimeGetCurrent() -> f64;
+        fn CFRunLoopGetMain() -> *mut c_void;
+        fn CFRunLoopTimerCreate(
+            allocator: *const c_void,
+            fire_date: f64,
+            interval: f64,
+            flags: usize,
+            order: isize,
+            callback: TimerCallback,
+            context: *mut c_void,
+        ) -> *mut c_void;
+        fn CFRunLoopAddTimer(run_loop: *mut c_void, timer: *mut c_void, mode: *const c_void);
+        fn CFRelease(value: *const c_void);
+        static kCFRunLoopCommonModes: *const c_void;
+    }
+    let timer = unsafe {
+        CFRunLoopTimerCreate(
+            std::ptr::null(),
+            CFAbsoluteTimeGetCurrent(),
+            0.005,
+            0,
+            0,
+            dispatch_timer,
+            std::ptr::null_mut(),
+        )
+    };
+    if !timer.is_null() {
+        unsafe {
+            CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
+            CFRelease(timer);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn dispatch_timer(_timer: *mut c_void, _context: *mut c_void) {
+    JSC_BINDING.with(|slot| {
+        if let Some(binding) = slot.borrow_mut().as_mut() {
+            if binding.dispatch().is_err() {
+                INITIALIZATION_FAILED.store(true, Ordering::Release);
+            }
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]

@@ -195,6 +195,7 @@ int main(int argc, const char *argv[]) {
         id privateConfiguration = SendId(privateConfigurationClass, "new");
         SendVoidId(privateConfiguration, "setInjectedBundleURL:", [NSURL fileURLWithPath:bundlePath]);
         id processPool = SendIdId(SendId(processPoolClass, "alloc"), "_initWithConfiguration:", privateConfiguration);
+        SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"e2e", @"nwipc.mode");
         SendVoidIdId(processPool, "_setObject:forBundleParameter:", @"1", @"nwipc.e2e.enabled");
         const char *fault = getenv("NWIPC_WEBKIT_E2E_FAULT");
         if (fault == NULL) {
