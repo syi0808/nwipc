@@ -262,10 +262,10 @@ message, callback, resource가 새 generation에 전달되지 않는다.
 
 ### M6 — Observability와 release gate
 
-- Session/generation/state/topology/backend/capability snapshot 구현
-- Bytes/messages/backpressure/wakeup/coalescing/polling recovery/failure counter 구현
-- Payload, secret, native handle을 제외하는 redaction schema와 snapshot compatibility 규칙 확정
-- arm64/x86_64 fixture, sanitizer/Miri/fuzz, actual-provider benchmark, signed E2E CI 범위 명시
+- [x] Session/generation/state/topology/backend/capability snapshot 구현
+- [x] Bytes/messages/backpressure/wakeup/coalescing/polling recovery/failure counter 구현
+- [x] Payload, secret, native handle을 제외하는 redaction schema와 snapshot compatibility 규칙 확정
+- [x] arm64/x86_64 fixture, sanitizer/Miri/fuzz, actual-provider benchmark, signed E2E CI 범위 명시
 
 완료: Failure matrix의 각 case에서 diagnostics만으로 backend/state/stable error/cleanup 결과를 식별할 수
 있고 전체 release gate가 통과한다.
