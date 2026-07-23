@@ -15,6 +15,10 @@ peer bootstrap, renderer transport creation, close, and redacted diagnostics. It
 the same IOSurface/Darwin channel in both public endpoints; inherited stdin carries bootstrap only.
 See `examples/native-peer/tests/process.rs` for the complete two-process public API path.
 
+Native peers can remain runtime-neutral with `nwipc-peer-async`, or opt into Tokio readiness and
+bounded correctness polling through `nwipc-peer-tokio`. Both adapters preserve the synchronous
+core's nonblocking send/receive and typed backpressure contract without owning a task or thread.
+
 ## Development
 
 ```sh

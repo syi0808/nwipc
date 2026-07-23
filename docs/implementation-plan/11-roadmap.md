@@ -94,7 +94,7 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 ## Phase 8 — 확장
 
 1. [x] Fragmentation (data-plane integration)
-2. [ ] Async/Tokio
+2. [x] Async/Tokio
 3. [ ] Wry
 4. [ ] Tauri
 5. [ ] Authentication/encryption
@@ -102,8 +102,15 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 7. [ ] Chunk pool/borrowed API
 8. [ ] Bun/타 플랫폼
 
-Phase 8 항목은 production vertical slice의 통합 경로가 닫힌 뒤 착수한다. 이미 완료된 fragmentation도
-production handshake가 capability를 협상하기 전까지 WebKit transport에서는 활성화하지 않는다.
+Phase 8 항목은 production vertical slice의 통합 경로가 닫힌 뒤 착수한다. 완료된 fragmentation은
+production handshake의 capability 협상 결과에 따라 WebKit transport에서만 활성화한다.
+
+Async/Tokio는 `nwipc-peer-async`의 runtime-neutral readiness contract와 `nwipc-peer-tokio`의
+`Notify` hint/bounded correctness poll adapter로 구현한다. Production macOS transport의
+`PortTransport::receive`는 nonblocking operation을 유지하고 bootstrap handshake만 `wait_receive`로
+분리한다. Adapter는 executor/task/thread를 소유하지 않으며 readiness 등록 뒤 operation을 다시 확인해
+lost wake-up 없이 readable/writable progress를 보장한다. Fake port backpressure/event contract,
+Tokio callback/polling recovery, zero interval 거부와 workspace gate를 완료 증거로 사용한다.
 
 ## 최초 백로그 상태
 

@@ -24,7 +24,7 @@ pub struct PeerExpectation {
 }
 
 /// Minimal framed transport supplied by a provider adapter.
-pub trait PortTransport {
+pub trait PortTransport: Send {
     /// Sends one complete transport frame.
     ///
     /// # Errors
@@ -37,6 +37,17 @@ pub trait PortTransport {
     ///
     /// Returns a provider-specific transport failure.
     fn receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport>;
+    /// Waits for one frame during synchronous bootstrap handshakes.
+    ///
+    /// The default preserves compatibility with transports whose `receive` operation already
+    /// waits. Production transports may keep `receive` nonblocking and override this method.
+    ///
+    /// # Errors
+    ///
+    /// Returns a provider-specific transport failure.
+    fn wait_receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
+        self.receive()
+    }
     /// Releases provider resources. Calls must be idempotent.
     ///
     /// # Errors
@@ -52,6 +63,10 @@ impl<T: PortTransport + ?Sized> PortTransport for Box<T> {
 
     fn receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
         (**self).receive()
+    }
+
+    fn wait_receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
+        (**self).wait_receive()
     }
 
     fn close(&mut self) -> Result<(), ErrorReport> {
@@ -77,6 +92,33 @@ pub enum PortEvent {
     Message(Vec<u8>),
     /// The remote endpoint closed gracefully.
     Closed,
+}
+
+/// Synchronous, nonblocking peer operations consumed by runtime adapters.
+pub trait PeerPort {
+    /// Attempts to send one complete message.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Backpressured` when writable readiness must be awaited.
+    fn try_send(&mut self, payload: &[u8]) -> Result<(), ErrorReport>;
+
+    /// Attempts to receive one event without waiting.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed transport or protocol failure.
+    fn try_receive(&mut self) -> Result<Option<PortEvent>, ErrorReport>;
+
+    /// Attempts graceful close.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Backpressured` when writable readiness must be awaited.
+    fn close(&mut self) -> Result<(), ErrorReport>;
+
+    /// Returns the current port state.
+    fn state(&self) -> PortState;
 }
 
 /// Attached native port independent of threads and async runtimes.
@@ -133,7 +175,7 @@ impl<T: PortTransport> NativePort<T> {
             maximum_message,
             proof: envelope.secret().expose().to_vec(),
         })?;
-        let hello = transport.receive()?.ok_or_else(|| {
+        let hello = transport.wait_receive()?.ok_or_else(|| {
             peer_error(
                 ErrorCode::Timeout,
                 Recoverability::ReplaceEndpoint,
@@ -189,7 +231,7 @@ impl<T: PortTransport> NativePort<T> {
         let hello = handshake.hello()?;
         drop(envelope);
         transport.send(&hello)?;
-        let acknowledgement = transport.receive()?.ok_or_else(|| {
+        let acknowledgement = transport.wait_receive()?.ok_or_else(|| {
             peer_error(
                 ErrorCode::Timeout,
                 Recoverability::ReplaceEndpoint,
@@ -319,6 +361,24 @@ impl<T: PortTransport> NativePort<T> {
                 operation,
             ))
         }
+    }
+}
+
+impl<T: PortTransport> PeerPort for NativePort<T> {
+    fn try_send(&mut self, payload: &[u8]) -> Result<(), ErrorReport> {
+        Self::try_send(self, payload)
+    }
+
+    fn try_receive(&mut self) -> Result<Option<PortEvent>, ErrorReport> {
+        Self::try_receive(self)
+    }
+
+    fn close(&mut self) -> Result<(), ErrorReport> {
+        Self::close(self)
+    }
+
+    fn state(&self) -> PortState {
+        Self::state(self)
     }
 }
 

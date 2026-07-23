@@ -1,0 +1,21 @@
+[package]
+name = "nwipc-peer-async"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "peer"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc-error.workspace = true
+nwipc-peer-core.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

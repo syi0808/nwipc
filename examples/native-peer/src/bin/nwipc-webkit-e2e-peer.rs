@@ -38,19 +38,33 @@ fn verify_uncommitted_is_hidden(peer: &mut Peer) -> Result<(), String> {
         let _ = std::io::stdout().flush();
         std::process::exit(0);
     });
-    match peer.try_receive().map_err(|error| error.to_string())? {
-        Some(PortEvent::Message(_)) => Err("uncommitted writer bytes became visible".into()),
-        Some(PortEvent::Closed) | None => Err("writer closed before visibility window".into()),
+    loop {
+        match peer.try_receive().map_err(|error| error.to_string())? {
+            Some(PortEvent::Message(_)) => {
+                return Err("uncommitted writer bytes became visible".into());
+            }
+            Some(PortEvent::Closed) => {
+                return Err("writer closed before visibility window".into());
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(1)),
+        }
     }
 }
 
 fn verify_committed_is_visible(peer: &mut Peer) -> Result<(), String> {
-    match peer.try_receive().map_err(|error| error.to_string())? {
-        Some(PortEvent::Message(payload)) if payload.len() == 257 => {
-            println!("webkit-e2e-peer: writer-after-commit-visible=ok");
-            Ok(())
+    loop {
+        match peer.try_receive().map_err(|error| error.to_string())? {
+            Some(PortEvent::Message(payload)) if payload.len() == 257 => {
+                println!("webkit-e2e-peer: writer-after-commit-visible=ok");
+                return Ok(());
+            }
+            Some(PortEvent::Message(_)) => {
+                return Err("committed writer payload mismatch".into());
+            }
+            Some(PortEvent::Closed) => {
+                return Err("committed writer payload was not visible".into());
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(1)),
         }
-        Some(PortEvent::Message(_)) => Err("committed writer payload mismatch".into()),
-        Some(PortEvent::Closed) | None => Err("committed writer payload was not visible".into()),
     }
 }

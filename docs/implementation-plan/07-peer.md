@@ -42,14 +42,23 @@
 
 ## 후순위
 
-- `nwipc-peer-async`
-- `nwipc-peer-tokio`
 - `nwipc-peer-bun`
 - Borrowed send/receive
+
+## Async/Tokio 확장
+
+- `nwipc-peer-async`는 synchronous `PeerPort`와 edge-loss 없는 `Readiness` registration을 조합한다.
+- `send`, `receive`, `close`는 readiness 등록 뒤 nonblocking operation을 다시 확인해 lost wake-up을
+  방지하고 `Backpressured`만 writable 대기로 변환한다.
+- `nwipc-peer-tokio`는 `Notify` 기반 readable/writable hint와 bounded correctness poll을 제공한다.
+- 두 adapter는 executor, task, thread를 소유하지 않으며 기존 `Peer`와 production transport를 그대로
+  사용한다.
+
+검증은 fake port의 backpressure/event 계약, callback hint와 polling recovery, zero interval 거부,
+production macOS transport의 nonblocking receive 경계를 포함한다.
 
 ## 완료 기준
 
 - 별도 native process가 attach/send/receive/close를 수행한다.
 - Crash와 restart에서 stale message가 전달되지 않는다.
 - Peer public API가 platform native descriptor와 core implementation detail을 노출하지 않는다.
-

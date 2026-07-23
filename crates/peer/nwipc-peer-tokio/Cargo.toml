@@ -1,0 +1,23 @@
+[package]
+name = "nwipc-peer-tokio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[package.metadata.nwipc]
+layer = "adapter"
+stability = "experimental"
+owner = "nwipc"
+
+[dependencies]
+nwipc-error.workspace = true
+nwipc-peer-async.workspace = true
+nwipc-peer-core.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

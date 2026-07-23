@@ -1025,11 +1025,23 @@ mod tests {
                 production_capabilities(),
             )
             .unwrap();
-            match port.try_receive().unwrap() {
-                Some(PortEvent::Message(payload)) => port.try_send(&payload).unwrap(),
-                event => panic!("unexpected peer event: {event:?}"),
+            loop {
+                match port.try_receive().unwrap() {
+                    Some(PortEvent::Message(payload)) => {
+                        port.try_send(&payload).unwrap();
+                        break;
+                    }
+                    Some(PortEvent::Closed) => panic!("renderer closed before request"),
+                    None => std::thread::yield_now(),
+                }
             }
-            assert_eq!(port.try_receive().unwrap(), Some(PortEvent::Closed));
+            loop {
+                match port.try_receive().unwrap() {
+                    Some(PortEvent::Closed) => break,
+                    Some(PortEvent::Message(_)) => panic!("unexpected message after response"),
+                    None => std::thread::yield_now(),
+                }
+            }
         });
         let mut renderer = nwipc.open_renderer(&mut session).unwrap();
         assert_eq!(

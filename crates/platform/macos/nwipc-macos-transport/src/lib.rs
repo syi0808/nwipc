@@ -369,6 +369,23 @@ impl PortTransport for MacosEndpointTransport {
     }
 
     fn receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
+        if let Some(frame) = self.pending_inbound.pop_front() {
+            return Ok(Some(frame));
+        }
+        if self.remote_closed {
+            return Ok(None);
+        }
+        match self.channel.poll()? {
+            Some(ChannelEvent::Message(frame)) => Ok(Some(frame)),
+            Some(ChannelEvent::Closed | ChannelEvent::Reset) => {
+                self.remote_closed = true;
+                Ok(None)
+            }
+            Some(ChannelEvent::Writable | ChannelEvent::Control(_)) | None => Ok(None),
+        }
+    }
+
+    fn wait_receive(&mut self) -> Result<Option<Vec<u8>>, ErrorReport> {
         self.receive_frame()
     }
 

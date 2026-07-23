@@ -7,7 +7,7 @@ use nwipc_bootstrap_schema::ProviderKind;
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
 use nwipc_macos_transport::{MacosEndpointTransport, production_capabilities};
 use nwipc_peer_bootstrap::consume;
-use nwipc_peer_core::{NativePort, PeerExpectation, PortEvent, PortState, PortTransport};
+use nwipc_peer_core::{NativePort, PeerExpectation, PeerPort, PortEvent, PortState, PortTransport};
 use nwipc_types::{Generation, SessionId};
 
 /// Default maximum logical application message.
@@ -130,9 +130,27 @@ impl Peer {
                     }
                 },
                 Some(PortEvent::Closed) => return Ok(()),
-                None => continue,
+                None => std::thread::sleep(std::time::Duration::from_millis(1)),
             }
         }
+    }
+}
+
+impl PeerPort for Peer {
+    fn try_send(&mut self, payload: &[u8]) -> Result<(), ErrorReport> {
+        Self::try_send(self, payload)
+    }
+
+    fn try_receive(&mut self) -> Result<Option<PortEvent>, ErrorReport> {
+        Self::try_receive(self)
+    }
+
+    fn close(&mut self) -> Result<(), ErrorReport> {
+        Self::close(self)
+    }
+
+    fn state(&self) -> PortState {
+        Self::state(self)
     }
 }
 
@@ -142,7 +160,7 @@ struct StreamTransport<R, W> {
     closed: bool,
 }
 
-impl<R: Read, W: Write> PortTransport for StreamTransport<R, W> {
+impl<R: Read + Send, W: Write + Send> PortTransport for StreamTransport<R, W> {
     fn send(&mut self, frame: &[u8]) -> Result<(), ErrorReport> {
         if self.closed {
             return Err(stream_error(ErrorCode::Closed, "write peer frame"));

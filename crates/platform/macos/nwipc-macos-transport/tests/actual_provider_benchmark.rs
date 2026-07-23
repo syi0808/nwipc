@@ -113,7 +113,13 @@ fn spawn_peer(
                 }
             }
         }
-        assert_eq!(port.try_receive().unwrap(), Some(PortEvent::Closed));
+        loop {
+            match port.try_receive().unwrap() {
+                Some(PortEvent::Closed) => break,
+                Some(PortEvent::Message(_)) => panic!("unexpected message after benchmark"),
+                None => std::thread::yield_now(),
+            }
+        }
     })
 }
 

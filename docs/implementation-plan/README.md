@@ -52,11 +52,11 @@ Phase 7 hardening: [security/unsafe audit](../security.md),
 후순위:
 
 - chunk pool, crypto, Mach provider
-- async/Tokio/Bun, Wry/Tauri
+- Bun, Wry/Tauri
 - borrowed send/receive, Windows/Linux backend
 
-Phase 8의 data-plane fragmentation은 완료했다. Production handshake가 fragmentation capability를
-협상하기 전까지 실제 WebKit transport는 inline message contract를 유지한다.
+Phase 8의 data-plane fragmentation과 Async/Tokio adapter는 완료했다. Fragmentation은 production
+handshake capability 협상 결과에 따라 실제 WebKit transport에서도 활성화된다.
 
 ## 초기 설계 subset 보완
 

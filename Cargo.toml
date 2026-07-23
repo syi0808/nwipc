@@ -46,6 +46,8 @@ nwipc-bootstrap-schema = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bo
 nwipc-bootstrap-codec = { version = "=0.0.0", path = "crates/bootstrap/nwipc-bootstrap-codec" }
 nwipc-peer-bootstrap = { version = "=0.0.0", path = "crates/bootstrap/nwipc-peer-bootstrap" }
 nwipc-peer-core = { version = "=0.0.0", path = "crates/peer/nwipc-peer-core" }
+nwipc-peer-async = { version = "=0.0.0", path = "crates/peer/nwipc-peer-async" }
+nwipc-peer-tokio = { version = "=0.0.0", path = "crates/peer/nwipc-peer-tokio" }
 nwipc-memory-api = { version = "=0.0.0", path = "crates/memory/nwipc-memory-api" }
 nwipc-memory-iosurface = { version = "=0.0.0", path = "crates/memory/nwipc-memory-iosurface" }
 nwipc-signal-api = { version = "=0.0.0", path = "crates/signal/nwipc-signal-api" }
@@ -73,6 +75,7 @@ nwipc-webkit-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-webkit
 nwipc-macos-transport = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-transport" }
 nwipc-appkit = { version = "=0.0.0", path = "crates/adapters/nwipc-appkit" }
 nwipc = { version = "=0.0.0", path = "crates/facade/nwipc" }
+tokio = { version = "1", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
