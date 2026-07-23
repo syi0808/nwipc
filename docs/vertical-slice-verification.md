@@ -11,7 +11,7 @@ execution evidence.
 | 2 | `golden_prefix_is_architecture_independent`, `data_record_matches_the_external_golden_fixture`, `negotiates_golden_hello_and_ack`, `round_trips_canonical_envelope` | `CI / cross-architecture-fixtures (arm64, x86_64)` | macOS 15 arm64/x86_64 |
 | 3 | `exchanges_bidirectional_fifo_messages`, `backpressure_recovers_with_one_writable_edge`, fragmentation and ring writer crash tests | `CI / rust-core`, `Hardening` | Portable data plane |
 | 4 | protocol arbitrary-frame test and record/bootstrap/layout/protocol/validation fuzz targets | `Hardening / fuzz-smoke`, `address-sanitizer` | Linux x86_64 sanitizer/fuzz |
-| 5 | `two_process_raw_byte_visibility`, `two_process_notification_delivery` | `Release Gate / cross-architecture` | macOS 15 arm64/x86_64 providers |
+| 5 | IOSurface/Mach `two_process_*visibility`와 Darwin/Mach `two_process_notification_delivery` | `Release Gate / cross-architecture` | macOS 15 arm64/x86_64 providers |
 | 6 | `dropped_primary_is_recovered_by_bounded_poll` and common transport contract | `Release Gate / cross-architecture` | Darwin/hybrid providers |
 | 7 | runtime multi-session, replacement, failed-generation, and cleanup tests | `CI / rust-core` | Portable runtime |
 | 8 | `public_endpoints_use_bootstrap_pipe_only_for_production_echo` | `CI / rust-core` | Native peer on Linux/macOS |

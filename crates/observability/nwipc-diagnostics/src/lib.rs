@@ -13,6 +13,8 @@ pub enum MemoryBackend {
     ProcessTest,
     /// macOS `IOSurface` memory.
     IoSurface,
+    /// macOS Mach memory entry.
+    Mach,
 }
 
 /// Stable signal backend name without a notification name or token.
@@ -22,6 +24,8 @@ pub enum SignalBackend {
     Poll,
     /// Darwin notifications plus correctness polling.
     Hybrid,
+    /// Mach port notifications.
+    Mach,
 }
 
 /// Stable public operation stage associated with a failure.

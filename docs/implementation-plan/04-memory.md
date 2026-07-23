@@ -2,7 +2,7 @@
 
 ## 범위
 
-대상은 `nwipc-memory-api`, `nwipc-region`, `nwipc-memory-iosurface`다. API는 provider-neutral하고 IOSurface 구현만 macOS FFI를 소유한다.
+대상은 `nwipc-memory-api`, `nwipc-region`, `nwipc-memory-iosurface`, `nwipc-memory-mach`다. API는 provider-neutral하고 platform provider만 macOS FFI를 소유한다.
 
 ## `nwipc-memory-api`
 
@@ -64,6 +64,15 @@ Phase 4 결정:
 - Raw pointer lifetime은 owned mapping보다 길 수 없다.
 - Native handle/ID는 Debug/diagnostics에서 redaction한다.
 - Generation replacement 때 기존 mapping을 재사용하지 않는다.
+
+## `nwipc-memory-mach`
+
+- `mach_vm_allocate`와 memory entry를 분리해 owner mapping과 capability lifetime을 관리한다.
+- Task-local port 번호는 직렬화하지 않고 generation-bound bootstrap rendezvous에서 send right를
+  Mach message descriptor로 전달한다.
+- Attach 시 `mach_vm_map`의 native protection으로 read-only/read-write를 구분한다.
+- Safe byte API는 atomic byte 접근을 사용하고 cursor는 acquire/release atomic으로 접근한다.
+- 동일 process contract와 별도 process의 entry attach/read/write visibility를 검증한다.
 
 ## 완료 기준
 

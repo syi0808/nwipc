@@ -15,6 +15,8 @@ pub enum MemoryBackend {
     ProcessTest,
     /// macOS `IOSurface` shared memory.
     IoSurface,
+    /// macOS Mach memory-entry shared memory.
+    Mach,
 }
 
 /// Notification backend selected for future resource preparation.
@@ -26,6 +28,8 @@ pub enum SignalBackend {
     DarwinNotify,
     /// Darwin hints with correctness polling.
     Hybrid,
+    /// Mach port hints.
+    Mach,
 }
 
 /// Provider combination supplied to every generation preparation.
@@ -48,6 +52,12 @@ impl ProviderSelection {
     pub const MACOS: Self = Self {
         memory: MemoryBackend::IoSurface,
         signal: SignalBackend::Hybrid,
+    };
+
+    /// Experimental capability-transferred Mach provider combination.
+    pub const MACH: Self = Self {
+        memory: MemoryBackend::Mach,
+        signal: SignalBackend::Mach,
     };
 }
 
@@ -406,6 +416,13 @@ mod tests {
         assert_ne!(first.session_id, second.session_id);
         assert_ne!(first.generation, second.generation);
         assert_eq!(runtime.session_count(), 2);
+    }
+
+    #[test]
+    fn mach_selection_is_explicit_and_provider_neutral() {
+        assert_eq!(ProviderSelection::MACH.memory, MemoryBackend::Mach);
+        assert_eq!(ProviderSelection::MACH.signal, SignalBackend::Mach);
+        assert_ne!(ProviderSelection::MACH, ProviderSelection::MACOS);
     }
 
     #[test]

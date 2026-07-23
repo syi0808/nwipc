@@ -16,7 +16,9 @@ use std::process::{Command, Output};
 const UNSAFE_CRATES: &[&str] = &[
     "nwipc-atomic",
     "nwipc-memory-iosurface",
+    "nwipc-memory-mach",
     "nwipc-signal-darwin",
+    "nwipc-signal-mach",
     "nwipc-renderer-jsc",
     "nwipc-macos-spi",
     "nwipc-macos-bundle-shim",
@@ -25,7 +27,9 @@ const UNSAFE_CRATES: &[&str] = &[
 const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/data-plane/nwipc-atomic", 5),
     ("crates/memory/nwipc-memory-iosurface", 28),
+    ("crates/memory/nwipc-memory-mach", 43),
     ("crates/signal/nwipc-signal-darwin", 5),
+    ("crates/signal/nwipc-signal-mach", 47),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
     ("crates/platform/macos/nwipc-macos-bundle-shim", 11),

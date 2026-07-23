@@ -40,7 +40,9 @@ Safe crate에서 unsafe token을 쓰는 것은 `architecture-check`가 차단한
 |---|---:|---|
 | `nwipc-atomic` | 5 | aligned/live atomic mapping, 단일 producer/consumer, acquire/release publication |
 | `nwipc-memory-iosurface` | 28 | CoreFoundation ownership, IOSurface lock lifetime, alloc size·cursor alignment 전 범위 검사, locked base에서만 atomic cursor 접근 |
+| `nwipc-memory-mach` | 43 | VM allocation/mapping lifetime, memory-entry right transfer, bootstrap rendezvous ownership, atomic byte/cursor access |
 | `nwipc-signal-darwin` | 5 | NUL-terminated names, valid notify token, cancel-after-registration |
+| `nwipc-signal-mach` | 47 | Mach send/receive right transfer, single-listener move semantics, bounded message buffers, no-senders notification, cancellation and port teardown |
 | `nwipc-renderer-jsc` | 76 | live JSC context, callback panic containment, protect/unprotect pairing, typed-array copy-before-return |
 | `nwipc-macos-spi` | 4 | non-null Objective-C class/selector/method probe before invocation |
 | `nwipc-macos-bundle-shim` | 11 | ABI entry panic containment, WebKit object lifetime, checked callback arguments, checked notify state registration/read/cancel |

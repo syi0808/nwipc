@@ -51,6 +51,7 @@ nwipc-peer-async = { version = "=0.0.0", path = "crates/peer/nwipc-peer-async" }
 nwipc-peer-tokio = { version = "=0.0.0", path = "crates/peer/nwipc-peer-tokio" }
 nwipc-memory-api = { version = "=0.0.0", path = "crates/memory/nwipc-memory-api" }
 nwipc-memory-iosurface = { version = "=0.0.0", path = "crates/memory/nwipc-memory-iosurface" }
+nwipc-memory-mach = { version = "=0.0.0", path = "crates/memory/nwipc-memory-mach" }
 nwipc-signal-api = { version = "=0.0.0", path = "crates/signal/nwipc-signal-api" }
 nwipc-signal-poll = { version = "=0.0.0", path = "crates/signal/nwipc-signal-poll" }
 nwipc-renderer-api = { version = "=0.0.0", path = "crates/renderer/nwipc-renderer-api" }
@@ -67,6 +68,7 @@ nwipc-session = { version = "=0.0.0", path = "crates/runtime/nwipc-session" }
 nwipc-session-machine = { version = "=0.0.0", path = "crates/runtime/nwipc-session-machine" }
 nwipc-runtime = { version = "=0.0.0", path = "crates/runtime/nwipc-runtime" }
 nwipc-signal-darwin = { version = "=0.0.0", path = "crates/signal/nwipc-signal-darwin" }
+nwipc-signal-mach = { version = "=0.0.0", path = "crates/signal/nwipc-signal-mach" }
 nwipc-signal-hybrid = { version = "=0.0.0", path = "crates/signal/nwipc-signal-hybrid" }
 nwipc-metrics = { version = "=0.0.0", path = "crates/observability/nwipc-metrics" }
 nwipc-diagnostics = { version = "=0.0.0", path = "crates/observability/nwipc-diagnostics" }

@@ -1950,6 +1950,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-memory-mach"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+ "nwipc-memory-api",
+ "nwipc-types",
+]
+
+[[package]]
 name = "nwipc-metrics"
 version = "0.0.0"
 
@@ -2188,6 +2197,15 @@ dependencies = [
  "nwipc-error",
  "nwipc-signal-api",
  "nwipc-signal-poll",
+]
+
+[[package]]
+name = "nwipc-signal-mach"
+version = "0.0.0"
+dependencies = [
+ "nwipc-error",
+ "nwipc-signal-api",
+ "nwipc-types",
 ]
 
 [[package]]

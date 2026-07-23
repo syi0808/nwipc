@@ -7,6 +7,7 @@
 | Domain, wire codec, fragmented in-process data plane, renderer core | Linux/macOS, x86_64/arm64 | 지원 | stable workspace CI, fixture, stress, fuzz |
 | Native process-test peer | Linux/macOS, x86_64/arm64 | 실험적 | child echo, partial bootstrap, timeout, kill/reap, replacement |
 | IOSurface + Darwin Notify provider | macOS arm64/x86_64 | 실험적 | authenticated encryption, provider contract, two-process tests, actual-provider release benchmark |
+| Mach memory + port signal provider | macOS arm64/x86_64 | 실험적 | capability transfer, native protection, two-process raw-byte/notification contract |
 | JSC binding | macOS arm64 | 실험적 | callback/teardown contract; signed E2E에서 load |
 | Runtime-neutral async / Tokio peer adapter | Linux/macOS, x86_64/arm64 | 실험적 | fake readiness contract, bounded polling recovery, workspace CI |
 | Wry 0.55 / Tauri 2.11 adapter | macOS 26.2 arm64 | 실험적 | builder configuration merge, framework lifecycle/cleanup, stale generation, workspace CI |

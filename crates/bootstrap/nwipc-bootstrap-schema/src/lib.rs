@@ -88,6 +88,10 @@ pub enum ProviderKind {
     Poll = 4,
     /// Hybrid Darwin notification and polling provider.
     Hybrid = 5,
+    /// Mach memory-entry provider.
+    MachMemory = 6,
+    /// Mach port notification provider.
+    MachPort = 7,
 }
 
 impl ProviderKind {
@@ -99,6 +103,8 @@ impl ProviderKind {
             3 => Some(Self::DarwinNotify),
             4 => Some(Self::Poll),
             5 => Some(Self::Hybrid),
+            6 => Some(Self::MachMemory),
+            7 => Some(Self::MachPort),
             _ => None,
         }
     }
@@ -279,14 +285,17 @@ impl BootstrapEnvelope {
         }
         if !matches!(
             self.memory.provider(),
-            ProviderKind::ProcessTest | ProviderKind::IoSurface
+            ProviderKind::ProcessTest | ProviderKind::IoSurface | ProviderKind::MachMemory
         ) {
             return Err(schema_error(
                 ErrorCode::ProtocolViolation,
                 "bootstrap memory provider",
             ));
         }
-        if matches!(self.signal.provider(), ProviderKind::IoSurface) {
+        if matches!(
+            self.signal.provider(),
+            ProviderKind::IoSurface | ProviderKind::MachMemory
+        ) {
             return Err(schema_error(
                 ErrorCode::ProtocolViolation,
                 "bootstrap signal provider",
@@ -390,5 +399,23 @@ mod tests {
         let output = format!("{:?}", envelope(1));
         assert!(output.contains("redacted"));
         assert!(!output.contains("[3, 3"));
+    }
+
+    #[test]
+    fn accepts_mach_provider_pair_and_preserves_wire_values() {
+        let envelope = BootstrapEnvelope::new(
+            SessionId::from_u128(8).unwrap(),
+            Generation::new(3).unwrap(),
+            ProtocolRange::new(1, 1).unwrap(),
+            EndpointRole::Peer,
+            OpaqueDescriptor::new(ProviderKind::MachMemory, vec![1]).unwrap(),
+            OpaqueDescriptor::new(ProviderKind::MachPort, vec![2]).unwrap(),
+            BootstrapSecret::new(vec![3; 16]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(envelope.memory().provider() as u8, 6);
+        assert_eq!(envelope.signal().provider() as u8, 7);
+        assert_eq!(ProviderKind::from_wire(6), Some(ProviderKind::MachMemory));
+        assert_eq!(ProviderKind::from_wire(7), Some(ProviderKind::MachPort));
     }
 }

@@ -98,7 +98,7 @@ Testkit 전용 frame, raw mapping 접근 또는 payload용 stream transport는 �
 3. [x] Wry
 4. [x] Tauri
 5. [x] Authentication/encryption
-6. [ ] Mach provider
+6. [x] Mach provider
 7. [ ] Chunk pool/borrowed API
 8. [ ] Bun/타 플랫폼
 
@@ -134,6 +134,14 @@ macOS production capability에는 `AUTHENTICATED_ENCRYPTION`을 필수로 포함
 Payload/tag/counter tamper, wrong secret/generation, replay, unpublished pending frame과 양방향
 actual-provider round trip, key/error redaction 및 workspace gate를 완료 증거로 사용한다. 장기 peer
 identity, certificate와 forward secrecy는 application provisioning 범위이며 제공하지 않는다.
+
+Mach provider는 `nwipc-memory-mach`의 VM memory entry와 `nwipc-signal-mach`의 port hint로 구현한다.
+두 provider 모두 task-local port 번호를 wire에 기록하지 않고 generation-bound bootstrap rendezvous에서
+Mach message descriptor로 right를 전달한다. Memory attach는 native VM protection을 적용하고 signal
+receive right는 정확히 한 endpoint로만 move한다. Descriptor redaction/stale generation/range/access,
+동일 process lifecycle과 별도 process raw-byte/notification contract, unsafe audit 및 workspace gate를
+완료 증거로 사용한다. 기존 WebKit 기본값은 IOSurface/Darwin hybrid이며 Mach 선택은 experimental
+provider contract로 유지한다.
 
 ## 최초 백로그 상태
 

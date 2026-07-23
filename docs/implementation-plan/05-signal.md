@@ -2,7 +2,7 @@
 
 ## 범위
 
-대상은 `nwipc-signal-api`, `nwipc-signal-coalescing`, `nwipc-signal-darwin`, `nwipc-signal-poll`, `nwipc-signal-hybrid`다. Signal은 message count가 아니라 “shared state가 바뀌었을 수 있음”이라는 hint다.
+대상은 `nwipc-signal-api`, `nwipc-signal-coalescing`, `nwipc-signal-darwin`, `nwipc-signal-mach`, `nwipc-signal-poll`, `nwipc-signal-hybrid`다. Signal은 message count가 아니라 “shared state가 바뀌었을 수 있음”이라는 hint다.
 
 ## `nwipc-signal-api`
 
@@ -73,6 +73,14 @@
 - Signal provider가 ring 없이 독립 검증된다.
 - Darwin notification 유실이 message correctness를 깨지 않는다.
 - Generation 교체 후 stale callback이 새 endpoint에 전달되지 않는다.
+
+## `nwipc-signal-mach`
+
+- Host broker가 방향별 port의 send right와 단일 receive right를 task 사이에 capability로 전달한다.
+- Descriptor는 task-local port 번호 대신 session/generation/direction별 bootstrap rendezvous를 담는다.
+- Full queue는 이미 pending hint가 있는 coalesced success로 취급하고 listener는 중복 hint를 drain한다.
+- Receive right는 한 번만 move하며 duplicate listener, stale generation, cancellation을 fail-closed 처리한다.
+- 동일 process coalescing/cancellation과 별도 process notification delivery를 검증한다.
 
 ## Phase 4 구현 메모
 
