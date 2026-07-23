@@ -52,8 +52,8 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 - Production frame authentication/encryption은 필수이며 certificate identity, forward secrecy와 reconnect policy는 아직 없다.
 - Production WebKit origin별 binding policy는 아직 없다.
 - Wry/Tauri adapter는 macOS production provider만 지원하며 framework IPC를 payload fallback으로 사용하지 않는다.
-- Bun은 외부 adapter/addon이 아니라 source 내부 native integration으로 계획하며, 현재 embedding
-  bootstrap과 host-driven readiness 경계는 완료되지 않았다.
+- Bun은 외부 adapter/addon이 아니라 Rust source 내부 native integration으로 계획한다. 현재 NWIPC
+  lower-level crate로 구현 가능하지만 Bun runtime/JSC/event-loop product integration과 E2E 증거는 없다.
 - Windows/Linux native provider는 구현되지 않았으며
   [`implementation-plan/14-windows-linux-providers.md`](implementation-plan/14-windows-linux-providers.md)의
   독립 계획을 따른다.

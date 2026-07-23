@@ -15,53 +15,60 @@ loop가 peer endpoint를 소유하게 한다.
 
 판정 기준 Bun upstream snapshot은 2026-07-23의
 [`892b1dabc69e2a0a973244f772b84967c73ccad5`](https://github.com/oven-sh/bun/tree/892b1dabc69e2a0a973244f772b84967c73ccad5)다.
-이 snapshot은 Cargo workspace와 최종 binary에 링크되는 `bun_bin` Rust `staticlib`을 가지므로
-NWIPC를 Rust dependency로 직접 편입할 구조적 위치는 존재한다.
+이 snapshot은 runtime, JSC binding, event loop와 process entry를 Cargo workspace의 Rust crate로
+구성한다. 특히 `bun_runtime`이 `bun_event_loop`와 `bun_jsc`를 직접 의존하고 event loop가 task enqueue,
+timer와 native poll 경계를 제공하므로 NWIPC를 별도 언어/ABI bridge 없이 Rust dependency로 편입할 수
+있다.
 
 ## 현재 SDK 지원성 판정
 
-**결론: macOS prototype의 data plane과 protocol은 지원하지만, Bun source에 바로 연결할 수 있는
-완성된 embedding SDK는 아직 아니다.**
+**결론: 현재 NWIPC crate는 Rust로 포팅된 Bun의 macOS native integration을 구현하기에 충분하다.**
+
+완성된 Bun용 고수준 facade는 없지만 이는 가능성을 막는 SDK 결함이 아니다. Bun 내부 crate가 공개된
+lower-level contract를 조립하면 protocol부터 Mach transport까지 native 경로를 만들 수 있다. 남은
+작업은 새로운 NWIPC adapter가 아니라 Bun runtime의 bootstrap, event-loop task와 JSC binding을
+연결하는 product integration이다.
 
 | 경계 | 현재 상태 | 판정 |
 |---|---|---|
 | Wire/protocol/fragment/crypto | engine과 executor에 독립적 | 그대로 재사용 가능 |
 | Native peer state machine | `nwipc-peer-core::NativePort`와 `PeerPort`가 sync/nonblocking contract 제공 | 그대로 재사용 가능 |
 | macOS production transport | `MacosEndpointTransport::attach`와 Mach provider가 공개됨 | lower-level 조립으로 재사용 가능 |
-| Runtime integration | executor를 소유하지 않는 `nwipc-peer-async` readiness contract 제공 | Bun 전용 readiness 구현 필요 |
-| Public peer bootstrap | `nwipc-peer::Peer::initialize`가 env와 stdin을 직접 소비 | embedded Bun에는 부적합 |
-| JavaScript binding | `nwipc-renderer-jsc`가 macOS JavaScriptCore C API와 renderer lifecycle에 결합 | Bun binding으로 대체 필요 |
+| Bootstrap decode | `nwipc-bootstrap-codec::decode`와 `PeerExpectation`/`NativePort::accept`가 공개됨 | Bun 내부에서 직접 조립 가능 |
+| Runtime integration | `PeerPort`가 sync/nonblocking이고 `nwipc-peer-async`가 readiness 의미론 제공 | Bun Rust event loop에 직접 연결 가능 |
+| JavaScript binding | Bun이 `bun_jsc`와 generated native binding을 Rust crate로 소유 | Bun 내부 native binding으로 구현 가능 |
 | Distribution | crate version이 `0.0.0`이고 workspace path dependency 중심 | Bun fork에서 vendoring 또는 source pin 필요 |
 | Windows/Linux native path | production facade가 Mach provider만 선택 | 지원하지 않음 |
 
-따라서 NWIPC의 protocol/channel/peer/provider를 다시 작성할 필요는 없다. 반면 `Peer::initialize()`를
-Bun startup에서 호출하거나 `nwipc-renderer-jsc`를 링크하는 방식은 native integration으로 인정하지
-않는다. Bun이 bootstrap byte 수신, endpoint 생성, event-loop wake-up, JS object lifecycle을 직접
-연결할 작은 embedding surface가 먼저 필요하다.
+`nwipc-peer::Peer::initialize()`가 env/stdin을 소비하는 것은 CLI facade의 제약일 뿐이다. Bun 내부
+crate는 bootstrap bytes를 decode한 뒤 `MacosEndpointTransport::attach`와 `NativePort::accept`를
+직접 호출할 수 있으므로 별도 NWIPC API를 기다릴 필요가 없다. `nwipc-renderer-jsc`도 사용할 필요가
+없으며 Bun의 기존 Rust JSC binding/codegen 경계에 같은 `PeerPort`를 연결하면 된다.
 
-## 필요한 NWIPC 선행 변경
+## Bun 내부 구현 경계
 
-### B0 — Embedding bootstrap
+### B0 — Native peer assembly
 
-- env/stdin 없이 owned bootstrap bytes와 명시적 `PeerExpectation`을 받는 peer constructor를 제공한다.
-- constructor 내부에서 decode, generation 검증, Mach endpoint attach와 HELLO/ACK를 수행한다.
-- bootstrap secret과 provider descriptor는 성공과 실패 모두에서 호출자에게 재노출하지 않는다.
-- 기존 CLI용 `Peer::initialize()`는 새 constructor 위의 얇은 wrapper로 유지한다.
+- `bun_runtime` 내부 NWIPC module이 owned bootstrap bytes와 identity를 받는다.
+- `nwipc-bootstrap-codec::decode`, `MacosEndpointTransport::attach`,
+  `NativePort::accept`를 한 번만 조립한다.
+- bootstrap secret과 provider descriptor는 생성 직후 Bun JS object에서 접근할 수 없게 한다.
+- endpoint registry는 VM과 generation을 key로 사용한다.
 
 완료 기준은 in-memory bootstrap, malformed/stale bootstrap, duplicate consumption과 cleanup contract
-test다. Bun이 `MacosEndpointTransport`와 `NativePort`를 직접 조립하는 임시 구현은 prototype 증거일
-뿐 public embedding contract 완료로 보지 않는다.
+test다. 이 조립을 반복할 consumer가 생기면 이후 `Peer::from_bootstrap` 같은 convenience API로
+NWIPC에 올릴 수 있지만 Bun integration의 선행 조건은 아니다.
 
-### B1 — Host-driven progress
+### B1 — Rust event-loop progress
 
-- Bun event loop가 소유할 수 있는 readiness registration 또는 bounded `drive()` contract를 제공한다.
+- Bun `bun_event_loop`의 task enqueue와 native timer/poll 경계에서 `PeerPort`를 drive한다.
 - 등록 직후 operation을 다시 확인하여 signal edge와 등록 사이의 lost wake-up을 막는다.
-- callback은 JS value를 만지지 않고 Bun JS thread에 generation-tagged task만 enqueue한다.
-- correctness poll은 native hint 유실 복구용이며 busy loop나 JS timer가 아니다.
+- concurrent callback은 JS value를 만지지 않고 Bun JS thread에 generation-tagged task만 enqueue한다.
+- correctness poll은 Bun native timer가 수행하며 busy loop나 JavaScript timer를 사용하지 않는다.
 
-현재 `nwipc-peer-async::Readiness`는 필요한 의미론을 정의하지만 Mach transport의 receive right나
-host callback registration을 노출하지 않는다. 이 경계를 닫기 전에는 Bun event-loop integration이
-완료됐다고 판정하지 않는다.
+현재 API만으로도 bounded native correctness poll을 사용한 integration이 가능하다. Mach receive
+right를 Bun native poller에 직접 등록하는 zero-idle-poll 최적화는 별도 provider readiness handle이
+필요하며, 이는 production 성능 개선 게이트이지 기능 prototype의 blocker는 아니다.
 
 ### B2 — Stable ownership surface
 
@@ -73,14 +80,14 @@ host callback registration을 노출하지 않는다. 이 경계를 닫기 전�
 ## Bun fork 구현 순서
 
 1. Bun Cargo workspace에 필요한 NWIPC crate를 source-pinned dependency로 추가한다.
-2. Bun runtime owner에 generation-scoped native peer registry를 둔다.
-3. Bun native binding에서 binary send, receive callback, buffered state와 close만 노출한다.
-4. Bun event loop에 B1 readiness/drive hook을 등록하고 JS thread로 delivery task를 보낸다.
+2. `bun_runtime`에 generation-scoped native peer registry와 B0 assembly를 둔다.
+3. `bun_jsc` codegen 경계에 binary send, receive callback, state와 close를 노출한다.
+4. `bun_event_loop`에 B1 native readiness/drive hook을 등록한다.
 5. VM teardown과 endpoint replacement에서 stale task를 generation으로 폐기한다.
 6. macOS arm64/x86_64 two-process E2E와 crash/reload matrix를 수행한다.
 
-정상 payload가 Zig/C++ stream, stdin/stdout, Node-API 또는 JS callback relay를 한 번 더 통과하면
-목표 경로가 아니다. JS boundary의 `Uint8Array` copy는 허용하지만 native transport가 검증한 message
+정상 payload가 stdin/stdout, Node-API 또는 JavaScript callback relay를 한 번 더 통과하면 목표
+경로가 아니다. JS boundary의 `Uint8Array` copy는 허용하지만 native transport가 검증한 message
 boundary와 backpressure를 Bun binding이 재해석해서는 안 된다.
 
 ## 완료 게이트
@@ -92,5 +99,5 @@ boundary와 backpressure를 Bun binding이 재해석해서는 안 된다.
 - Bun VM shutdown, peer crash와 repeated close에서 native handle과 mapping이 남지 않는다.
 - Bun upstream pin 변경 시 compile, contract test와 macOS process E2E를 다시 수행한다.
 
-이 게이트 전의 정확한 상태 표기는 **경계 정의** 또는 **Provider 통합 prototype**이다. Bun native
-production integration으로 표시하지 않는다.
+현재 NWIPC 측 준비 상태는 **native integration 가능**이다. Bun fork에서 위 게이트를 닫기 전의 제품
+상태는 **경계 정의** 또는 **Provider 통합 prototype**이며 production integration으로 표시하지 않는다.

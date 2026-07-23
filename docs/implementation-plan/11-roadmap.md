@@ -155,7 +155,7 @@ architecture/clippy/test gate를 완료 증거로 사용한다.
 
 Bun은 외부 `nwipc-bun` adapter나 FFI addon을 만들지 않는다. Bun source tree의 Rust crate graph에
 NWIPC core/peer crate를 직접 연결하고 Bun의 native binding 및 event loop에서 소유권과 readiness를
-관리한다. 현재 SDK가 재사용할 수 있는 범위와 선행 API gap, Bun fork에서의 구현 순서는
+관리한다. 현재 SDK가 재사용할 수 있는 범위, 선택적 최적화 gap과 Bun fork에서의 구현 순서는
 [`13-bun-native-integration.md`](13-bun-native-integration.md)에서 관리한다.
 
 Windows/Linux는 Bun 작업의 하위 항목으로 취급하지 않는다. OS별 shared-memory, signal, capability
@@ -432,5 +432,5 @@ Cursor/layout/record/bootstrap 결정은 Phase 1 전에 고정한다. IOSurface�
 1. GitHub-hosted trusted signing과 release evidence 자동화
 2. Origin별 binding policy 확정
 3. macOS minor release별 signed process matrix 확대
-4. Bun native integration 선행 API gap 해소
+4. Bun Rust runtime native integration prototype
 5. Windows/Linux provider는 별도 roadmap에서 착수 판단
