@@ -10,9 +10,16 @@ dispatched `Release Gate` workflow runs plus signed E2E artifacts.
 |---|---|---|
 | Stable workspace | format, clippy, Rust/TypeScript tests, dependency policy, JSC lifecycle repetition | `CI` |
 | Memory safety | Miri, AddressSanitizer, record/bootstrap/layout/fragment/protocol/validation fuzz smoke | `Hardening` |
-| Cross architecture | identical fixed-width fixtures and diagnostics contracts on macOS arm64 and x86_64 | `Release Gate / cross-architecture` |
+| Cross architecture | identical fixed-width fixtures and diagnostics contracts on macOS arm64 and x86_64 | `CI / cross-architecture-fixtures`, `Release Gate / cross-architecture` |
 | Actual providers | IOSurface, Darwin/hybrid channel contracts and baseline benchmark on both macOS architectures | `Release Gate / cross-architecture` |
 | Production process | trusted-identity signed/hardened WebKit notification, crash, kill, reload, and generation matrix | `Release Gate / signed-webkit-e2e` |
+
+The release dispatch requires the full candidate commit SHA. Its preflight checks out that exact
+commit and refuses to proceed unless successful `CI` and `Hardening` runs exist for the same SHA.
+The final `release-evidence` job uploads a record linking those runs and the current release gate;
+it fails unless both architecture jobs and the requested trusted signed E2E job succeed.
+Test-to-job-to-support traceability is fixed in
+[vertical-slice-verification.md](vertical-slice-verification.md).
 
 The signing job intentionally uses a restricted self-hosted runner because GitHub-hosted runners do
 not contain the private signing identity. Release runs set `signed_e2e=true`; a skipped signing job
@@ -29,6 +36,20 @@ evidence.
 - Diagnostics snapshots use [schema v2](diagnostics-schema.md). Failure review records the session,
   generation, backend, state, structured failure, and cleanup status without attaching payload or
   native-handle data.
+
+## Dispatch
+
+After the candidate is pushed and its automatic `CI` and `Hardening` runs pass:
+
+```sh
+gh workflow run release.yml \
+  -f candidate_sha="$(git rev-parse HEAD)" \
+  -f signed_e2e=true
+```
+
+Download and retain the `release-record`, both `actual-provider-*`, and `signed-webkit-e2e`
+artifacts. The release is incomplete if any artifact comes from another commit or the evidence job
+does not pass.
 
 ## Support boundary
 

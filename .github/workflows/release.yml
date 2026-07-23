@@ -3,6 +3,10 @@ name: Release Gate
 on:
   workflow_dispatch:
     inputs:
+      candidate_sha:
+        description: Full commit SHA already verified by CI and Hardening
+        required: true
+        type: string
       signed_e2e:
         description: Run trusted-identity WebKit E2E on the signing runner
         required: true
@@ -10,11 +14,46 @@ on:
         default: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
+      ci_url: ${{ steps.required-runs.outputs.ci_url }}
+      hardening_url: ${{ steps.required-runs.outputs.hardening_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - name: Pin candidate commit
+        id: candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI and Hardening runs
+        id: required-runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          ci_url="$(gh run list --workflow ci.yml --commit "$CANDIDATE_SHA" \
+            --status success --json url --jq '.[0].url // empty')"
+          hardening_url="$(gh run list --workflow hardening.yml --commit "$CANDIDATE_SHA" \
+            --status success --json url --jq '.[0].url // empty')"
+          test -n "$ci_url"
+          test -n "$hardening_url"
+          echo "ci_url=$ci_url" >> "$GITHUB_OUTPUT"
+          echo "hardening_url=$hardening_url" >> "$GITHUB_OUTPUT"
+
   cross-architecture:
     name: Fixtures and providers (${{ matrix.arch }})
+    needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -26,6 +65,8 @@ jobs:
             runner: macos-15-intel
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.preflight.outputs.candidate_sha }}
       - run: test "$(uname -m)" = "${{ matrix.arch }}"
       - run: rustup show active-toolchain
       - name: Cross-architecture fixtures and diagnostics
@@ -52,9 +93,12 @@ jobs:
 
   signed-webkit-e2e:
     if: inputs.signed_e2e
+    needs: preflight
     runs-on: [self-hosted, macOS, ARM64, nwipc-signing]
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.preflight.outputs.candidate_sha }}
       - run: rustup show active-toolchain
       - name: Trusted signed/hardened process matrix
         env:
@@ -67,3 +111,44 @@ jobs:
           name: signed-webkit-e2e
           path: target/webkit-e2e/
 
+  release-evidence:
+    if: always()
+    needs: [preflight, cross-architecture, signed-webkit-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write immutable release record
+        env:
+          CANDIDATE_SHA: ${{ needs.preflight.outputs.candidate_sha }}
+          CI_URL: ${{ needs.preflight.outputs.ci_url }}
+          HARDENING_URL: ${{ needs.preflight.outputs.hardening_url }}
+          CROSS_RESULT: ${{ needs.cross-architecture.result }}
+          SIGNED_RESULT: ${{ needs.signed-webkit-e2e.result }}
+          SIGNED_REQUESTED: ${{ inputs.signed_e2e }}
+        run: |
+          cat > release-record.md <<EOF
+          # NWIPC release gate record
+
+          - Commit: \`$CANDIDATE_SHA\`
+          - CI: $CI_URL
+          - Hardening: $HARDENING_URL
+          - Release Gate: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          - Cross-architecture fixtures/providers: $CROSS_RESULT
+          - Trusted signed WebKit E2E requested: $SIGNED_REQUESTED
+          - Trusted signed WebKit E2E: $SIGNED_RESULT
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-record
+          path: release-record.md
+      - name: Enforce complete release evidence
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          CROSS_RESULT: ${{ needs.cross-architecture.result }}
+          SIGNED_RESULT: ${{ needs.signed-webkit-e2e.result }}
+          SIGNED_REQUESTED: ${{ inputs.signed_e2e }}
+        run: |
+          test "$PREFLIGHT_RESULT" = success
+          test "$CROSS_RESULT" = success
+          test "$SIGNED_REQUESTED" = true
+          test "$SIGNED_RESULT" = success

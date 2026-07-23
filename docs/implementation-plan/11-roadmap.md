@@ -313,6 +313,8 @@ Operations:
 ## 완료 증거와 추적성
 
 각 milestone은 완료 선언과 함께 다음 표를 갱신한다.
+Vertical slice의 21개 기준별 test/job/support 연결은
+[`docs/vertical-slice-verification.md`](../vertical-slice-verification.md)에 고정한다.
 
 | 완료 항목 | Production artifact | Contract/process test | CI job | 지원 조합/제한 |
 |---|---|---|---|---|

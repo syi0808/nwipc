@@ -9,6 +9,29 @@ permissions:
   contents: read
 
 jobs:
+  cross-architecture-fixtures:
+    name: Cross-architecture fixtures (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+      - name: Assert runner architecture
+        run: test "$(uname -m)" = "${{ matrix.arch }}"
+      - run: rustup show active-toolchain
+      - name: Verify shared wire fixtures
+        run: >-
+          cargo test
+          -p nwipc-layout -p nwipc-record -p nwipc-protocol
+          -p nwipc-bootstrap-codec -p nwipc-validation
+          -p nwipc-diagnostics -p nwipc-metrics
+
   rust-core:
     name: Rust core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
