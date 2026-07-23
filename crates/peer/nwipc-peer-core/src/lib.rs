@@ -229,8 +229,10 @@ impl<T: PortTransport> NativePort<T> {
         let mut frame = Vec::with_capacity(payload.len() + 1);
         frame.push(DATA_KIND);
         frame.extend_from_slice(payload);
-        self.transport.send(&frame).inspect_err(|_| {
-            self.state = PortState::Failed;
+        self.transport.send(&frame).inspect_err(|error| {
+            if error.recoverability() != Recoverability::Retryable {
+                self.state = PortState::Failed;
+            }
         })
     }
 
@@ -437,11 +439,15 @@ mod tests {
     struct FakeTransport {
         received: VecDeque<Vec<u8>>,
         sent: Vec<Vec<u8>>,
+        send_outcomes: VecDeque<Result<(), ErrorReport>>,
         closed: bool,
     }
 
     impl PortTransport for FakeTransport {
         fn send(&mut self, frame: &[u8]) -> Result<(), ErrorReport> {
+            if let Some(outcome) = self.send_outcomes.pop_front() {
+                outcome?;
+            }
             self.sent.push(frame.to_vec());
             Ok(())
         }
@@ -490,6 +496,7 @@ mod tests {
         let transport = FakeTransport {
             received: VecDeque::from([acknowledgement(16), vec![0, 1, 2]]),
             sent: Vec::new(),
+            send_outcomes: VecDeque::new(),
             closed: false,
         };
         let mut port = NativePort::attach(envelope(), expectation(), transport, 16).unwrap();
@@ -508,6 +515,7 @@ mod tests {
         let transport = FakeTransport {
             received: VecDeque::new(),
             sent: Vec::new(),
+            send_outcomes: VecDeque::new(),
             closed: false,
         };
         let stale = PeerExpectation {
@@ -521,5 +529,29 @@ mod tests {
                 .code(),
             ErrorCode::StaleGeneration
         );
+    }
+
+    #[test]
+    fn retryable_send_failure_keeps_port_open() {
+        let backpressured = peer_error(
+            ErrorCode::Backpressured,
+            Recoverability::Retryable,
+            "fake peer send",
+        );
+        let transport = FakeTransport {
+            received: VecDeque::from([acknowledgement(16)]),
+            sent: Vec::new(),
+            send_outcomes: VecDeque::from([Ok(()), Err(backpressured), Ok(())]),
+            closed: false,
+        };
+        let mut port = NativePort::attach(envelope(), expectation(), transport, 16).unwrap();
+
+        assert_eq!(
+            port.try_send(b"request").unwrap_err().code(),
+            ErrorCode::Backpressured
+        );
+        assert_eq!(port.state(), PortState::Open);
+        port.try_send(b"request").unwrap();
+        assert_eq!(port.state(), PortState::Open);
     }
 }
