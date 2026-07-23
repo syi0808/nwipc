@@ -1035,6 +1035,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(target_os = "macos")]
     fn identity() -> (SessionId, Generation) {
         (
             SessionId::from_u128(9).unwrap(),
