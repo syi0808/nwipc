@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-nwipc = { path = "../crates/facade/nwipc" }
+nwipc.workspace = true
 nwipc-channel-core.workspace = true
 nwipc-error.workspace = true
 nwipc-macos-artifact.workspace = true

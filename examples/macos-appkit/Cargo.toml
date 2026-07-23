@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-nwipc-appkit = { path = "../../crates/adapters/nwipc-appkit" }
+nwipc-appkit.workspace = true
 nwipc-macos-spi.workspace = true
 
 [lints]

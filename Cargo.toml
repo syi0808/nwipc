@@ -62,8 +62,17 @@ nwipc-macos-spi = { version = "=0.0.0", path = "crates/platform/macos/nwipc-maco
 nwipc-state = { version = "=0.0.0", path = "crates/domain/nwipc-state" }
 nwipc-session = { version = "=0.0.0", path = "crates/runtime/nwipc-session" }
 nwipc-session-machine = { version = "=0.0.0", path = "crates/runtime/nwipc-session-machine" }
+nwipc-runtime = { version = "=0.0.0", path = "crates/runtime/nwipc-runtime" }
+nwipc-signal-darwin = { version = "=0.0.0", path = "crates/signal/nwipc-signal-darwin" }
+nwipc-signal-hybrid = { version = "=0.0.0", path = "crates/signal/nwipc-signal-hybrid" }
+nwipc-metrics = { version = "=0.0.0", path = "crates/observability/nwipc-metrics" }
+nwipc-diagnostics = { version = "=0.0.0", path = "crates/observability/nwipc-diagnostics" }
+nwipc-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-testkit" }
+nwipc-process-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-process-testkit" }
 nwipc-webkit-testkit = { version = "=0.0.0", path = "crates/testing/nwipc-webkit-testkit" }
 nwipc-macos-transport = { version = "=0.0.0", path = "crates/platform/macos/nwipc-macos-transport" }
+nwipc-appkit = { version = "=0.0.0", path = "crates/adapters/nwipc-appkit" }
+nwipc = { version = "=0.0.0", path = "crates/facade/nwipc" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

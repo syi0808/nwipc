@@ -13,7 +13,7 @@ owner = "nwipc"
 [dependencies]
 nwipc-capabilities.workspace = true
 nwipc-error.workspace = true
-nwipc-metrics = { path = "../nwipc-metrics" }
+nwipc-metrics.workspace = true
 nwipc-state.workspace = true
 nwipc-types.workspace = true
 

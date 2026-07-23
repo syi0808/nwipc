@@ -22,14 +22,14 @@ nwipc-layout.workspace = true
 nwipc-memory-api.workspace = true
 nwipc-protocol.workspace = true
 nwipc-signal-api.workspace = true
-nwipc-signal-hybrid = { path = "../../signal/nwipc-signal-hybrid" }
+nwipc-signal-hybrid.workspace = true
 nwipc-signal-poll.workspace = true
 nwipc-validation.workspace = true
 
 [dev-dependencies]
 nwipc-memory-iosurface.workspace = true
-nwipc-signal-darwin = { path = "../../signal/nwipc-signal-darwin" }
-nwipc-testkit = { path = "../../testing/nwipc-testkit" }
+nwipc-signal-darwin.workspace = true
+nwipc-testkit.workspace = true
 nwipc-types.workspace = true
 
 [lints]

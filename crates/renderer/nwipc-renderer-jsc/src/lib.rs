@@ -7,7 +7,10 @@ use std::ffi::c_void;
 use std::thread::{self, ThreadId};
 
 use nwipc_error::{ErrorCategory, ErrorCode, ErrorReport, Recoverability};
-use nwipc_renderer_api::{RendererTransport, TransportEvent};
+use nwipc_renderer_api::RendererTransport;
+#[cfg(target_os = "macos")]
+use nwipc_renderer_api::TransportEvent;
+#[cfg(target_os = "macos")]
 use nwipc_renderer_core::RendererCore;
 use nwipc_types::DocumentGeneration;
 
@@ -354,6 +357,7 @@ mod platform {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub(super) fn teardown(
         context: JscContext,
         generation: DocumentGeneration,
@@ -938,6 +942,7 @@ mod platform {
         Err(ErrorReport::unsupported("JavaScriptCore macOS binding"))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub(super) fn teardown(
         _context: JscContext,
         _generation: DocumentGeneration,

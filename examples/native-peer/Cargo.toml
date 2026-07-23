@@ -12,8 +12,8 @@ nwipc-peer = { version = "=0.0.0", path = "../../crates/peer/nwipc-peer" }
 nwipc-peer-core.workspace = true
 
 [dev-dependencies]
-nwipc = { path = "../../crates/facade/nwipc" }
-nwipc-process-testkit = { path = "../../crates/testing/nwipc-process-testkit" }
+nwipc.workspace = true
+nwipc-process-testkit.workspace = true
 nwipc-renderer-api.workspace = true
 nwipc-types.workspace = true
 

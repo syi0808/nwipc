@@ -23,7 +23,7 @@ nwipc-ring-reader.workspace = true
 nwipc-ring-writer.workspace = true
 
 [dev-dependencies]
-nwipc-testkit = { path = "../../testing/nwipc-testkit" }
+nwipc-testkit.workspace = true
 
 [lints]
 workspace = true

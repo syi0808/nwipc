@@ -27,7 +27,7 @@ nwipc-protocol.workspace = true
 nwipc-renderer-api.workspace = true
 nwipc-renderer-bootstrap.workspace = true
 nwipc-signal-api.workspace = true
-nwipc-signal-darwin = { path = "../../../signal/nwipc-signal-darwin" }
+nwipc-signal-darwin.workspace = true
 nwipc-signal-poll.workspace = true
 nwipc-types.workspace = true
 nwipc-validation.workspace = true

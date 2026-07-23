@@ -12,7 +12,7 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-bootstrap-schema.workspace = true
-nwipc-capabilities = { path = "../../domain/nwipc-capabilities" }
+nwipc-capabilities.workspace = true
 nwipc-error.workspace = true
 nwipc-protocol.workspace = true
 nwipc-types.workspace = true

@@ -12,7 +12,7 @@ owner = "nwipc"
 
 [dependencies]
 nwipc-error.workspace = true
-nwipc-renderer-api = { path = "../nwipc-renderer-api" }
+nwipc-renderer-api.workspace = true
 nwipc-types.workspace = true
 
 [lints]

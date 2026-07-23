@@ -387,7 +387,9 @@ mod tests {
     use nwipc_layout::OwnerRole;
     use nwipc_memory_api::{MappingAccess, SharedMemoryProvider};
     use nwipc_protocol::CURRENT_VERSION;
-    use nwipc_signal_api::{SignalDirection, SignalListener, SignalSender};
+    #[cfg(target_os = "macos")]
+    use nwipc_signal_api::SignalDirection;
+    use nwipc_signal_api::{SignalListener, SignalSender};
     use nwipc_testkit::{
         FakeMemoryProvider, FakeSignalListener, FakeSignalMode, FakeSignalSender, fake_signal_pair,
     };
