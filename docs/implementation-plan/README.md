@@ -28,6 +28,9 @@ Accepted decisions: [ADR 0001 — Domain, region layout, record wire contract](.
 Phase 7 hardening: [security/unsafe audit](../security.md),
 [support and failure matrix](../support-matrix.md)
 
+Mach migration parity baseline:
+[contract, fault, diagnostics, cleanup checklist](../mach-migration-baseline.md)
+
 ## 공통 구현 원칙
 
 - 전체 경계는 먼저 정의하되 기능은 vertical slice로 완성한다.

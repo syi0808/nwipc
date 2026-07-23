@@ -82,11 +82,20 @@ jobs:
           -p nwipc-signal-darwin -p nwipc-signal-mach
           -p nwipc-signal-hybrid -p nwipc-channel-transport
       - name: Actual-provider benchmark
+        env:
+          CANDIDATE_SHA: ${{ needs.preflight.outputs.candidate_sha }}
+          RUNNER_CLASS: ${{ matrix.runner }}
         run: |
           mkdir -p target/release-gate
-          cargo test --release -p nwipc-macos-transport \
-            --test actual_provider_benchmark -- --ignored --nocapture \
-            | tee "target/release-gate/actual-provider-${{ matrix.arch }}.log"
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "runner_class=$RUNNER_CLASS"
+            echo "uname=$(uname -a)"
+            sw_vers
+            echo "command=cargo test --release -p nwipc-macos-transport --test actual_provider_benchmark -- --ignored --nocapture"
+            cargo test --release -p nwipc-macos-transport \
+              --test actual_provider_benchmark -- --ignored --nocapture
+          } 2>&1 | tee "target/release-gate/actual-provider-${{ matrix.arch }}.log"
       - uses: actions/upload-artifact@v4
         with:
           name: actual-provider-${{ matrix.arch }}
@@ -103,9 +112,22 @@ jobs:
       - run: rustup show active-toolchain
       - name: Trusted signed/hardened process matrix
         env:
+          CANDIDATE_SHA: ${{ needs.preflight.outputs.candidate_sha }}
           NWIPC_CODESIGN_IDENTITY: ${{ secrets.NWIPC_CODESIGN_IDENTITY }}
           NWIPC_REQUIRE_TRUSTED_SIGNING: "1"
-        run: cargo xtask webkit-e2e
+        run: |
+          status=0
+          cargo xtask webkit-e2e || status=$?
+          mkdir -p target/webkit-e2e
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "runner_class=self-hosted-macOS-ARM64-nwipc-signing"
+            echo "uname=$(uname -a)"
+            sw_vers
+            echo "command=NWIPC_REQUIRE_TRUSTED_SIGNING=1 cargo xtask webkit-e2e"
+            echo "exit_status=$status"
+          } > target/webkit-e2e/candidate-metadata.txt
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

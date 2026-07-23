@@ -28,6 +28,8 @@ The final `release-evidence` job uploads a record linking those runs and the cur
 it fails unless both architecture jobs and the requested trusted signed E2E job succeed.
 Test-to-job-to-support traceability is fixed in
 [vertical-slice-verification.md](vertical-slice-verification.md).
+Mach-only 전환 전후의 provider 동등성, fault, diagnostics와 cleanup 비교 항목은
+[mach-migration-baseline.md](mach-migration-baseline.md)에 고정한다.
 
 The signing job intentionally uses a restricted self-hosted runner because GitHub-hosted runners do
 not contain the private signing identity. Release runs set `signed_e2e=true`; a skipped signing job

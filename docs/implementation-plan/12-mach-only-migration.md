@@ -54,6 +54,8 @@ transport에 연결되지 않았다. 현재 right 전달 rendezvous는 `bootstra
 - IOSurface/Darwin production path의 contract, fault matrix, benchmark 결과를 candidate 기준선으로 고정
 - Mach가 통과해야 하는 memory/signal/channel/public facade contract 목록을 한 곳에 기록
 - 양쪽 provider의 diagnostics 필드와 cleanup ownership 차이를 명시
+- Canonical checklist와 증거 형식은
+  [`mach-migration-baseline.md`](../mach-migration-baseline.md)에 고정
 
 완료 조건:
 
