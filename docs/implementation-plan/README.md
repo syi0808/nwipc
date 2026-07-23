@@ -13,14 +13,15 @@
 | [01-domain.md](01-domain.md) | types, error, capabilities, state |
 | [02-protocol.md](02-protocol.md) | layout, record, protocol, validation |
 | [03-data-plane.md](03-data-plane.md) | atomic, ring, flow control, channel |
-| [04-memory.md](04-memory.md) | memory API, region, IOSurface |
-| [05-signal.md](05-signal.md) | signal API, coalescing, Darwin Notify, polling |
+| [04-memory.md](04-memory.md) | memory API, region, IOSurface, Mach memory |
+| [05-signal.md](05-signal.md) | signal API, coalescing, Darwin/Mach signal, polling |
 | [06-bootstrap-runtime.md](06-bootstrap-runtime.md) | bootstrap, session, session machine, runtime |
 | [07-peer.md](07-peer.md) | native peer core/facade와 process bootstrap |
 | [08-renderer-client.md](08-renderer-client.md) | renderer core, JSC, TypeScript client |
 | [09-macos-webkit.md](09-macos-webkit.md) | WebKit SPI, injected bundle, host, AppKit |
 | [10-observability-testing.md](10-observability-testing.md) | diagnostics, metrics, testkit, failure matrix |
 | [11-roadmap.md](11-roadmap.md) | 단계, 백로그, 완료 정의, ADR 결정사항 |
+| [12-mach-only-migration.md](12-mach-only-migration.md) | Mach-only production provider 전환 순서와 제거 게이트 |
 
 Accepted decisions: [ADR 0001 — Domain, region layout, record wire contract](../adr/0001-domain-layout-record-wire-contract.md)
 
@@ -51,11 +52,12 @@ Phase 7 hardening: [security/unsafe audit](../security.md),
 
 후순위:
 
-- chunk pool, Mach provider
+- chunk pool
 - Bun
 - borrowed send/receive, Windows/Linux backend
 
-Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter와 authentication/encryption을
+Phase 8의 data-plane fragmentation, Async/Tokio, Wry/Tauri adapter, authentication/encryption과
+Mach provider contract를
 완료했다. Fragmentation은
 production handshake capability 협상 결과에 따라 실제 WebKit transport에서도 활성화된다.
 Wry/Tauri는 AppKit reference host plan을 WebView 생성 전 native configuration에 병합하고
@@ -75,3 +77,4 @@ Phase 2 종료 시 ring/protocol/signal/session의 세부 crate가 지나치게 
 3. [Memory](04-memory.md), [Signal](05-signal.md), [Bootstrap/Runtime](06-bootstrap-runtime.md)
 4. [Peer](07-peer.md), [Renderer/Client](08-renderer-client.md), [macOS/WebKit](09-macos-webkit.md)
 5. [검증 계획](10-observability-testing.md)과 [로드맵](11-roadmap.md)
+6. [Mach-only 전환 계획](12-mach-only-migration.md)

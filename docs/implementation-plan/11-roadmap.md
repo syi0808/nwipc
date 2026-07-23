@@ -143,6 +143,12 @@ receive right는 정확히 한 endpoint로만 move한다. Descriptor redaction/s
 완료 증거로 사용한다. 기존 WebKit 기본값은 IOSurface/Darwin hybrid이며 Mach 선택은 experimental
 provider contract로 유지한다.
 
+제품 provider를 Mach-only로 단순화하는 작업은
+[`12-mach-only-migration.md`](12-mach-only-migration.md)의 순서를 따른다. Mach right의 production
+control-plane 전달, public/WebKit transport 통합, signed E2E와 성능 기준선을 먼저 닫고 두 차례 release
+candidate를 관찰한 뒤 IOSurface/Darwin 구현을 제거한다. Polling correctness fallback과
+fake/process-test provider는 제거 대상이 아니다.
+
 ## 최초 백로그 상태
 
 P0:

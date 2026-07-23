@@ -43,6 +43,8 @@ little-endian/fixed-width fixture로 architecture 독립성을 검사하지만 �
 - Wry/Tauri adapter는 macOS production provider만 지원하며 framework IPC를 payload fallback으로 사용하지 않는다.
 - Developer ID notarization/stapling과 WebKit macOS minor-release/x86_64 matrix는 아직 없다.
 - GitHub-hosted trusted signing과 immutable release evidence 자동화는 아직 완료되지 않았다.
+- Mach provider는 독립 process contract만 완료했으며 production WebKit 전환과 legacy provider 제거는
+  [`implementation-plan/12-mach-only-migration.md`](implementation-plan/12-mach-only-migration.md)를 따른다.
 - Benchmark 수치는 machine-specific baseline이며 회귀 임계값으로 사용하기 전에 같은 runner에서
   반복 측정해야 한다.
 
