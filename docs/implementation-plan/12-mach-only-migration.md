@@ -76,6 +76,19 @@ transport에 연결되지 않았다. 현재 right 전달 rendezvous는 `bootstra
 - Numeric port name이 wire, log, diagnostics, property list에 나타나지 않는다.
 - Renderer와 peer가 host payload relay 없이 필요한 right를 소유한다.
 
+구현 증거:
+
+- `nwipc-mach-transfer`가 사전 인증된 control receive right를 입력으로 받아 memory-entry send
+  right 2개와 방향별 signal send/receive right를 하나의 complex Mach message로 이동한다.
+- `transfers_exact_capabilities_once_without_bootstrap_lookup`,
+  `wrong_role_and_stale_generation_fail_before_transfer`,
+  `failed_native_send_cleans_capabilities_and_closes_one_shot_endpoint`가 canonical descriptor set,
+  one-shot/replay, role/session/generation 검증, 역순 실패 cleanup과 redaction을 고정한다.
+- `cargo xtask architecture-check`가 transfer crate에 `bootstrap_register`, `bootstrap_look_up`,
+  `bootstrap_port` token이 다시 들어오는 것을 차단한다.
+- 실제 `PreparedMacosTransport`와 renderer/peer attach 연결은 MMP2에서 이 primitive를 소비하며,
+  그 연결 전에는 MMP1 production call graph 완료로 판정하지 않는다.
+
 ### MMP2 — Provider-neutral transport 연결
 
 - `PreparedMacosTransport`가 Mach memory 두 방향과 Mach signal 두 방향을 generation resource로 소유

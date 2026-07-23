@@ -80,7 +80,8 @@ jobs:
           cargo test
           -p nwipc-memory-iosurface -p nwipc-memory-mach
           -p nwipc-signal-darwin -p nwipc-signal-mach
-          -p nwipc-signal-hybrid -p nwipc-channel-transport
+          -p nwipc-signal-hybrid -p nwipc-mach-transfer
+          -p nwipc-channel-transport
       - name: Actual-provider benchmark
         env:
           CANDIDATE_SHA: ${{ needs.preflight.outputs.candidate_sha }}

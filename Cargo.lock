@@ -1851,6 +1851,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nwipc-mach-transfer"
+version = "0.0.0"
+dependencies = [
+ "nwipc-bootstrap-schema",
+ "nwipc-error",
+ "nwipc-types",
+]
+
+[[package]]
 name = "nwipc-macos-artifact"
 version = "0.0.0"
 dependencies = [

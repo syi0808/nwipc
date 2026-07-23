@@ -19,6 +19,7 @@ const UNSAFE_CRATES: &[&str] = &[
     "nwipc-memory-mach",
     "nwipc-signal-darwin",
     "nwipc-signal-mach",
+    "nwipc-mach-transfer",
     "nwipc-renderer-jsc",
     "nwipc-macos-spi",
     "nwipc-macos-bundle-shim",
@@ -30,6 +31,7 @@ const UNSAFE_AUDIT_BASELINE: &[(&str, usize)] = &[
     ("crates/memory/nwipc-memory-mach", 43),
     ("crates/signal/nwipc-signal-darwin", 5),
     ("crates/signal/nwipc-signal-mach", 47),
+    ("crates/platform/macos/nwipc-mach-transfer", 16),
     ("crates/renderer/nwipc-renderer-jsc", 76),
     ("crates/platform/macos/nwipc-macos-spi", 4),
     ("crates/platform/macos/nwipc-macos-bundle-shim", 11),
@@ -315,6 +317,7 @@ fn architecture_check() -> Result<(), String> {
                 .into(),
         );
     }
+    check_mach_transfer(&root, &mut violations)?;
     let appkit_harness = read(&root.join("native/macos/appkit/main.m"))?;
     for forbidden in ["IOSurface", "EchoFrame", "ECHO_PAYLOAD", "MappedRegion"] {
         if appkit_harness.contains(forbidden) {
@@ -330,6 +333,18 @@ fn architecture_check() -> Result<(), String> {
     } else {
         Err(violations.join("\n"))
     }
+}
+
+fn check_mach_transfer(root: &Path, violations: &mut Vec<String>) -> Result<(), String> {
+    let source = read(&root.join("crates/platform/macos/nwipc-mach-transfer/src/lib.rs"))?;
+    for forbidden in ["bootstrap_register", "bootstrap_look_up", "bootstrap_port"] {
+        if source.contains(forbidden) {
+            violations.push(format!(
+                "nwipc-mach-transfer: global rendezvous token `{forbidden}` is forbidden"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn check_runtime_framework_dependency(

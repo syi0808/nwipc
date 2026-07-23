@@ -13,7 +13,8 @@ commit에서 legacy production path와 Mach replacement의 결과를 비교한�
 cargo test \
   -p nwipc-memory-iosurface -p nwipc-memory-mach \
   -p nwipc-signal-darwin -p nwipc-signal-mach \
-  -p nwipc-signal-hybrid -p nwipc-channel-transport
+  -p nwipc-signal-hybrid -p nwipc-mach-transfer \
+  -p nwipc-channel-transport
 cargo test --release -p nwipc-macos-transport \
   --test actual_provider_benchmark -- --ignored --nocapture
 cargo xtask webkit-e2e
